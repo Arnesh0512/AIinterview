@@ -21,20 +21,30 @@ def scrape_all_projects(candidate_id):
 
     candidate = candidates_collection.find_one({"_id": candidate_id})
 
-    if not candidate or "github_link" not in candidate:
+    if not candidate or "github" not in candidate:
         raise ValueError("GitHub link not found for candidate.")
 
-    github_url = candidate["github_link"]
-    response = requests.get(github_url)
+    github_url = candidate["github"].rstrip("/") + "?tab=repositories"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    response = requests.get(github_url, headers=headers)
 
     if response.status_code != 200:
         raise Exception("Failed to fetch GitHub profile.")
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    repos = soup.find_all("a", itemprop="name codeRepository")
+    # ✅ NEW SELECTOR
+    repos = soup.find_all("a", attrs={"itemprop": "name codeRepository"})
 
-    existing_projects = candidate.get("github", {})
+    # Fallback selector (new GitHub layout)
+    if not repos:
+        repos = soup.find_all("a", attrs={"data-testid": "repository-item-link"})
+
+    existing_projects = candidate.get("github_repos", {})
     next_index = len(existing_projects) + 1
 
     new_projects = {}
@@ -43,7 +53,6 @@ def scrape_all_projects(candidate_id):
         repo_name = repo.text.strip()
         repo_link = "https://github.com" + repo["href"]
 
-        # Avoid duplicate insertion
         if repo_link not in [v["url"] for v in existing_projects.values()]:
             new_projects[str(next_index)] = {
                 "name": repo_name,
@@ -54,7 +63,7 @@ def scrape_all_projects(candidate_id):
     if new_projects:
         candidates_collection.update_one(
             {"_id": candidate_id},
-            {"$set": {f"github.{k}": v for k, v in new_projects.items()}}
+            {"$set": {f"github_repos.{k}": v for k, v in new_projects.items()}}
         )
 
     return new_projects

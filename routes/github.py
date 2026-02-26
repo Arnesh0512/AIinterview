@@ -125,6 +125,10 @@ def submit_repo_answers(user_id: str, repo_number: str, qa_data: dict):
         temperature=0.3
     )
 
+    content = response.choices[0].message.content
+    print("===== RAW AI OUTPUT =====")
+    print(repr(content))
+    print("==========================")
     feedback_json = json.loads(response.choices[0].message.content)
 
     question_doc = {

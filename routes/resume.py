@@ -5,7 +5,7 @@ from bson import ObjectId
 import shutil
 import os
 import json
-
+import certifi 
 from database import summary_collection, user_collection, question_collection
 from pdf import process_resume
 from openai import OpenAI
@@ -111,12 +111,14 @@ def submit_answers(
     summary_id: str,
     qa_data: dict
 ):
+    # ------------------ Validate IDs ------------------
     try:
         candidate_id = ObjectId(candidate_id)
         summary_id = ObjectId(summary_id)
     except:
         raise HTTPException(status_code=400, detail="Invalid ID")
 
+    # ------------------ Fetch Summary ------------------
     summary_doc = summary_collection.find_one({
         "_id": summary_id,
         "Candidate_id": candidate_id
@@ -125,6 +127,11 @@ def submit_answers(
     if not summary_doc:
         raise HTTPException(status_code=404, detail="Summary not found")
 
+    # ------------------ Validate QA Data ------------------
+    if not qa_data.get("questions") or not qa_data.get("answers"):
+        raise HTTPException(status_code=400, detail="Questions or answers missing")
+
+    # ------------------ Build Prompt ------------------
     prompt = f"""
     Resume Summary:
     {summary_doc["Summary"]}
@@ -135,21 +142,45 @@ def submit_answers(
     Answers:
     {qa_data["answers"]}
 
-    Evaluate each answer and return JSON:
+    Evaluate each answer and return STRICTLY VALID JSON in this format:
+
     {{
-        "feedback_per_question": [...],
+        "feedback_per_question": [
+            {{
+                "question": "...",
+                "feedback": "..."
+            }}
+        ],
         "overall_feedback": "..."
     }}
     """
 
-    response = client_ai.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
-    )
+    # ------------------ Call OpenAI (JSON Mode) ------------------
+    try:
+        response = client_ai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            response_format={"type": "json_object"}   # 🔥 Critical line
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI call failed: {str(e)}")
 
-    feedback_json = json.loads(response.choices[0].message.content)
+    # ------------------ Parse AI Response Safely ------------------
+    content = response.choices[0].message.content
 
+    if not content:
+        raise HTTPException(status_code=500, detail="Empty AI response")
+
+    try:
+        feedback_json = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid JSON returned by AI: {content}"
+        )
+
+    # ------------------ Store in DB ------------------
     question_doc = {
         "Candidate_id": candidate_id,
         "summary_id": summary_id,
@@ -161,7 +192,7 @@ def submit_answers(
 
     inserted = question_collection.insert_one(question_doc)
 
-    # Append attempt to Resume list
+    # Append attempt ID into user Resume list
     user_collection.update_one(
         {
             "_id": candidate_id,
@@ -175,8 +206,8 @@ def submit_answers(
     )
 
     feedback_json["attempt_id"] = str(inserted.inserted_id)
-    return feedback_json
 
+    return feedback_json
 
 
 @router.get("/attempts/{summary_id}")
