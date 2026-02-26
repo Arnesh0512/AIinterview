@@ -153,7 +153,8 @@ def submit_repo_answers(user_id: str, repo_number: str, qa_data: dict):
                 "feedback": "..."
             }}
         ],
-        "overall_feedback": "..."
+        "overall_feedback": "...",
+        "score": 0-10
     }}
     """
 

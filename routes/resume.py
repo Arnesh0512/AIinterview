@@ -148,10 +148,12 @@ def submit_answers(
         "feedback_per_question": [
             {{
                 "question": "...",
-                "feedback": "..."
+                "feedback": "...",
+                "score": 0-10
             }}
         ],
-        "overall_feedback": "..."
+        "overall_feedback": "...",
+        "score": 0-10
     }}
     """
 

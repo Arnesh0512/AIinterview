@@ -12,7 +12,7 @@ question_collection = client["interview"]["questions"]
 github_collection = client["interview"]["github"]
 leetcode_collections = client["interview"]["leetcode_all_ques"]
 coding_collection = client["interview"]["coding_ques"]
-
+question3_collection = client["interview"]["cs_ques"]
 
 if __name__ == "__main__":
     try:
