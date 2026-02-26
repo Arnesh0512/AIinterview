@@ -11,6 +11,7 @@ summary_collection = client["interview"]["summary"]
 question_collection = client["interview"]["questions"]
 github_collection = client["interview"]["github"]
 leetcode_collections = client["interview"]["leetcode_all_ques"]
+coding_collection = client["interview"]["coding_ques"]
 
 
 if __name__ == "__main__":
