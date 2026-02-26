@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>AI Resume API Dashboard</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #1f1c2c, #928dab);
+    margin: 0;
+    padding: 30px;
+    color: white;
+}
+
+.container {
+    max-width: 1000px;
+    margin: auto;
+}
+
+.card {
+    background: rgba(255,255,255,0.1);
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+}
+
+input, textarea {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    border: none;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #00c6ff;
+    color: black;
+    font-weight: bold;
+}
+
+button:hover {
+    background: #0072ff;
+    color: white;
+}
+
+pre {
+    background: black;
+    padding: 10px;
+    border-radius: 10px;
+    overflow-x: auto;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>🚀 AI Resume API Dashboard</h1>
+
+<!-- Upload Resume -->
+<div class="card">
+<h2>Upload Resume</h2>
+<input type="text" id="upload_candidate_id" placeholder="Candidate ID">
+<input type="file" id="resume_file">
+<button onclick="uploadResume()">Upload</button>
+<pre id="upload_result"></pre>
+</div>
+
+<!-- Get All Resumes -->
+<div class="card">
+<h2>Get All Resumes</h2>
+<input type="text" id="get_candidate_id" placeholder="Candidate ID">
+<button onclick="getResumes()">Fetch</button>
+<pre id="resumes_result"></pre>
+</div>
+
+<!-- Generate Questions -->
+<div class="card">
+<h2>Generate Questions</h2>
+<input type="text" id="gen_candidate_id" placeholder="Candidate ID">
+<input type="text" id="gen_summary_id" placeholder="Summary ID">
+<input type="number" id="gen_num_questions" placeholder="Number of Questions">
+<button onclick="generateQuestions()">Generate</button>
+<pre id="questions_result"></pre>
+</div>
+
+<!-- Submit Answers -->
+<div class="card">
+<h2>Submit Answers</h2>
+<input type="text" id="sub_candidate_id" placeholder="Candidate ID">
+<input type="text" id="sub_summary_id" placeholder="Summary ID">
+<textarea id="sub_questions" placeholder='Questions JSON ["Q1","Q2"]'></textarea>
+<textarea id="sub_answers" placeholder='Answers JSON ["A1","A2"]'></textarea>
+<button onclick="submitAnswers()">Submit</button>
+<pre id="submit_result"></pre>
+</div>
+
+<!-- Get Attempts -->
+<div class="card">
+<h2>Get Attempts</h2>
+<input type="text" id="att_candidate_id" placeholder="Candidate ID">
+<input type="text" id="att_summary_id" placeholder="Summary ID">
+<button onclick="getAttempts()">Fetch Attempts</button>
+<pre id="attempts_result"></pre>
+</div>
+
+</div>
+
+<script>
+const BASE_URL = "http://127.0.0.1:8000";
+
+async function uploadResume() {
+    const candidateId = document.getElementById("upload_candidate_id").value;
+    const fileInput = document.getElementById("resume_file");
+    const file = fileInput.files[0];
+
+    const formData = new FormData();
+    formData.append("candidate_id", candidateId);
+    formData.append("file", file);
+
+    const response = await fetch(`${BASE_URL}/resume/upload`, {
+        method: "POST",
+        body: formData
+    });
+
+    const data = await response.json();
+    document.getElementById("upload_result").innerText = JSON.stringify(data, null, 2);
+}
+
+async function getResumes() {
+    const candidateId = document.getElementById("get_candidate_id").value;
+
+    const response = await fetch(`${BASE_URL}/resume/all?candidate_id=${candidateId}`);
+    const data = await response.json();
+    document.getElementById("resumes_result").innerText = JSON.stringify(data, null, 2);
+}
+
+async function generateQuestions() {
+    const candidateId = document.getElementById("gen_candidate_id").value;
+    const summaryId = document.getElementById("gen_summary_id").value;
+    const numQuestions = document.getElementById("gen_num_questions").value;
+
+    const response = await fetch(`${BASE_URL}/resume/questions?candidate_id=${candidateId}&summary_id=${summaryId}&num_questions=${numQuestions}`, {
+        method: "POST"
+    });
+
+    const data = await response.json();
+    document.getElementById("questions_result").innerText = JSON.stringify(data, null, 2);
+}
+
+async function submitAnswers() {
+    const candidateId = document.getElementById("sub_candidate_id").value;
+    const summaryId = document.getElementById("sub_summary_id").value;
+
+    const questions = JSON.parse(document.getElementById("sub_questions").value);
+    const answers = JSON.parse(document.getElementById("sub_answers").value);
+
+    const response = await fetch(`${BASE_URL}/resume/submit-answers?candidate_id=${candidateId}&summary_id=${summaryId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            questions: questions,
+            answers: answers
+        })
+    });
+
+    const data = await response.json();
+    document.getElementById("submit_result").innerText = JSON.stringify(data, null, 2);
+}
+
+async function getAttempts() {
+    const candidateId = document.getElementById("att_candidate_id").value;
+    const summaryId = document.getElementById("att_summary_id").value;
+
+    const response = await fetch(`${BASE_URL}/resume/attempts/${summaryId}?candidate_id=${candidateId}`);
+    const data = await response.json();
+    document.getElementById("attempts_result").innerText = JSON.stringify(data, null, 2);
+}
+</script>
+
+</body>
+</html>
