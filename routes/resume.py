@@ -1,39 +1,33 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from tempfile import NamedTemporaryFile
 from datetime import datetime
 from bson import ObjectId
 import shutil
 import os
+import json
 
 from database import summary_collection, user_collection, question_collection
 from pdf import process_resume
-from verify.token import verify_access_token
-from verify.user import verify_user_payload
 from openai import OpenAI
-import os
 
-security = HTTPBearer()
 router = APIRouter(prefix="/resume", tags=["Resume"])
 
 client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-question_collection = summary_collection.database["questions"]
-
 @router.post("/upload")
 async def upload_resume(
+    candidate_id: str,
     file: UploadFile = File(...),
-    ocr_mode: str = "N",
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    ocr_mode: str = "N"
 ):
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    user, candidate_id, email = verify_user_payload(payload)
+    try:
+        candidate_id = ObjectId(candidate_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF allowed")
 
-    # Save temporarily
     with NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         shutil.copyfileobj(file.file, tmp)
         temp_path = tmp.name
@@ -50,16 +44,15 @@ async def upload_resume(
 
 
 @router.get("/all")
-def get_all_resumes(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    user, candidate_id, email = verify_user_payload(payload)
+def get_all_resumes(candidate_id: str):
+    try:
+        candidate_id = ObjectId(candidate_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
     resumes = list(summary_collection.find(
         {"Candidate_id": candidate_id},
-        {"Summary": 0}  # don't send full summary
+        {"Summary": 0}
     ))
 
     for r in resumes:
@@ -71,16 +64,18 @@ def get_all_resumes(
 
 @router.post("/questions")
 def generate_questions(
+    candidate_id: str,
     summary_id: str,
-    num_questions: int,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    num_questions: int
 ):
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    user, candidate_id, email = verify_user_payload(payload)
+    try:
+        candidate_id = ObjectId(candidate_id)
+        summary_id = ObjectId(summary_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ID")
 
     summary_doc = summary_collection.find_one({
-        "_id": ObjectId(summary_id),
+        "_id": summary_id,
         "Candidate_id": candidate_id
     })
 
@@ -89,7 +84,7 @@ def generate_questions(
 
     prompt = f"""
     Based on the following resume summary, generate {num_questions} interview questions.
-    Return response strictly in JSON format:
+    Return strictly JSON:
     {{
         "questions": ["q1", "q2", ...]
     }}
@@ -104,24 +99,26 @@ def generate_questions(
         temperature=0.4
     )
 
-    import json
     questions_json = json.loads(response.choices[0].message.content)
 
     return questions_json
 
 
+
 @router.post("/submit-answers")
 def submit_answers(
+    candidate_id: str,
     summary_id: str,
-    qa_data: dict,   # {"questions":[...], "answers":[...]}
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    qa_data: dict
 ):
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    user, candidate_id, email = verify_user_payload(payload)
+    try:
+        candidate_id = ObjectId(candidate_id)
+        summary_id = ObjectId(summary_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ID")
 
     summary_doc = summary_collection.find_one({
-        "_id": ObjectId(summary_id),
+        "_id": summary_id,
         "Candidate_id": candidate_id
     })
 
@@ -138,12 +135,7 @@ def submit_answers(
     Answers:
     {qa_data["answers"]}
 
-    Evaluate each answer.
-    Provide:
-    - feedback per question
-    - overall feedback
-
-    Return JSON format:
+    Evaluate each answer and return JSON:
     {{
         "feedback_per_question": [...],
         "overall_feedback": "..."
@@ -156,12 +148,11 @@ def submit_answers(
         temperature=0.3
     )
 
-    import json
     feedback_json = json.loads(response.choices[0].message.content)
 
     question_doc = {
         "Candidate_id": candidate_id,
-        "summary_id": ObjectId(summary_id),
+        "summary_id": summary_id,
         "questions": qa_data["questions"],
         "answers": qa_data["answers"],
         "feedback": feedback_json,
@@ -170,19 +161,18 @@ def submit_answers(
 
     inserted = question_collection.insert_one(question_doc)
 
-
+    # Append attempt to Resume list
     user_collection.update_one(
-    {
-        "_id": candidate_id,
-        "Resume.summary_id":ObjectId(summary_id)
-    },
-    {
-        "$push": {
-            "Resume.$.question_attempt_id": inserted.inserted_id
+        {
+            "_id": candidate_id,
+            "Resume.summary_id": summary_id
+        },
+        {
+            "$push": {
+                "Resume.$.question_attempt_id": inserted.inserted_id
+            }
         }
-    }
     )
-
 
     feedback_json["attempt_id"] = str(inserted.inserted_id)
     return feedback_json
@@ -190,17 +180,17 @@ def submit_answers(
 
 
 @router.get("/attempts/{summary_id}")
-def get_attempts(
-    summary_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    user, candidate_id, email = verify_user_payload(payload)
+def get_attempts(candidate_id: str, summary_id: str):
+
+    try:
+        candidate_id = ObjectId(candidate_id)
+        summary_id = ObjectId(summary_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ID")
 
     attempts = list(question_collection.find({
         "Candidate_id": candidate_id,
-        "summary_id": ObjectId(summary_id)
+        "summary_id": summary_id
     }))
 
     formatted_attempts = []

@@ -1,40 +1,35 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from datetime import datetime
+from bson import ObjectId
 from database import user_collection
 from schemas.user import UserCreate
-from utils.time import IST
-from verify.token import verify_access_token
-from verify.user import verify_user_payload
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-
-security = HTTPBearer()
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-
-
 @router.patch("/register")
 def signup_user(
-    user_data: UserCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-    ):
+    user_id: str,
+    user_data: UserCreate
+):
+    try:
+        user_id = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
 
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    user,user_id ,email = verify_user_payload(payload)
-    if len(user)>4:
-        raise HTTPException(status_code=404, detail="User Already Registered")
+    user = user_collection.find_one({"_id": user_id})
 
-    
-    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.get("email"):  # already registered
+        raise HTTPException(status_code=400, detail="User Already Registered")
+
     update_data = user_data.model_dump(mode="json")
 
-    if email != update_data["email"].lower():
-        raise HTTPException(status_code=404, detail="Email Mismatch found")
+    if update_data["email"].lower() != update_data["email"]:
+        raise HTTPException(status_code=400, detail="Email must be lowercase")
 
-    user_collection = user_collection()
     user_collection.update_one(
         {"_id": user_id},
         {"$set": update_data}
@@ -43,37 +38,29 @@ def signup_user(
     return {"message": "User registered successfully"}
 
 
-
-
-
-
-
-
-
-
-
 @router.patch("/change-details")
-def signup_user(
-    user_data: UserCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-    ):
+def change_user_details(
+    user_id: str,
+    user_data: UserCreate
+):
+    try:
+        user_id = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
 
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    user,user_id ,email = verify_user_payload(payload)
-    
-    
+    user = user_collection.find_one({"_id": user_id})
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
     update_data = user_data.model_dump(mode="json")
 
-    if email != update_data["email"].lower():
-        raise HTTPException(status_code=404, detail="Email Mismatch found")
+    if user.get("email") != update_data["email"].lower():
+        raise HTTPException(status_code=400, detail="Email mismatch")
 
-    user_collection = user_collection()
     user_collection.update_one(
         {"_id": user_id},
         {"$set": update_data}
     )
 
     return {"message": "User details changed successfully"}
-
-

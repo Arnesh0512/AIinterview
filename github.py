@@ -136,7 +136,7 @@ def scrape_and_summarize_project(candidate_id, project_number):
         "project_name": project["name"],
         "project_url": repo_url,
         "summary": summary_text,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now()
     }
 
     inserted = github_collection.insert_one(summary_doc)
@@ -149,7 +149,7 @@ def scrape_and_summarize_project(candidate_id, project_number):
             "$set": {
                 f"github_sum.{project_number}": {
                     "summary_id": summary_id,
-                    "timestamp": datetime.utcnow()
+                    "timestamp": datetime.now()
                 }
             }
         }
