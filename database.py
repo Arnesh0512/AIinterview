@@ -9,6 +9,8 @@ client = MongoClient(uri, server_api=ServerApi('1'))
 user_collection = client["interview"]["users"]
 summary_collection = client["interview"]["summary"]
 question_collection = client["interview"]["questions"]
+github_collection = client["interview"]["github"]
+leetcode_collections = client["interview"]["leetcode_all_ques"]
 
 
 if __name__ == "__main__":

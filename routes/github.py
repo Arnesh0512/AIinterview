@@ -14,6 +14,20 @@ client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 question_collection = github_collection.database["github_questions"]
 
 
+@router.post("/update")
+def update_repos(user_id: str):
+
+    try:
+        user_id = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    projects = scrape_all_projects(user_id)
+
+    return {"message": "Repositories updated", "new_projects": projects}
+
+
+
 @router.get("/repos")
 def get_repos(user_id: str):
 

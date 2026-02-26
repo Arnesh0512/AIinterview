@@ -5,16 +5,13 @@ from bson import ObjectId
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from openai import OpenAI
-from database import user_collection, candidates_collection, github_collection
-
-from database import client, db_name
+from database import user_collection, github_collection
 
 load_dotenv()
 
 # Initialize OpenAI
 client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-db = client[db_name]
 candidates_collection = user_collection
 
 
@@ -106,7 +103,7 @@ def scrape_and_summarize_project(candidate_id, project_number):
 
     # Send to ChatGPT
     prompt = f"""
-    Summarize this GitHub project in less than 200 words.
+    Summarize this GitHub project in less than 600 words.
     Include:
     - Purpose
     - Tech stack

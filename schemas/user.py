@@ -8,5 +8,4 @@ class UserCreate(BaseModel):
     college_or_university: str
     course: str
     gender: Literal["M", "F", "O"]
-    github_profile: Optional[HttpUrl] = None
-    linkedin_profile: Optional[HttpUrl] = None
+    github: HttpUrl
