@@ -26,8 +26,8 @@ function handleGoogleLogin(response, role) {
 
 
 function renderGoogleButtons() {
-  const roles = ["user", "admin", "superadmin"];
-  const containers = ["user-signin", "admin-signin", "superadmin-signin"];
+  const roles = ["candidate"];
+  const containers = ["candidate-signin"];
   const clientId = "239161451898-ilpruu0evotd6li2t21gnsphc8uqplsh.apps.googleusercontent.com";
 
   roles.forEach((role, idx) => {

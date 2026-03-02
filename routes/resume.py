@@ -1,266 +1,854 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from tempfile import NamedTemporaryFile
-from datetime import datetime
-from bson import ObjectId
 import shutil
 import os
-import json
-import certifi 
-from database import summary_collection, user_collection, question_collection
-from pdf import process_resume
-from openai import OpenAI
+from database import resume_collection, resume_question_collection, resume_fs, candidate_collection
+from prompt.resume import process_resume, generate_resume_question, evaluate_resume_answers, generate_combined_diff_session_feedback, generate_combined_same_session_feedback
+from verify.token import verify_access_token
+from verify.candidate import verify_candidate_payload
+from verify.resume import verify_resume, verify_question_session, verify_session_status, verify_session_time, verify_question_number, verify_session_status2, verify_file_id
+from fastapi.responses import StreamingResponse
+from datetime import datetime, timedelta, timezone
+from utils.resume import previous_session_questions
+from utils.time import generate_timestamp
 
-router = APIRouter(prefix="/resume", tags=["Resume"])
+router = APIRouter(
+    prefix="/resume",
+    tags=["Resume"]
+)
 
-client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+security = HTTPBearer()
+
 
 @router.post("/upload")
 async def upload_resume(
-    candidate_id: str,
     file: UploadFile = File(...),
-    ocr_mode: str = "N"
+    ocr_mode: str = "N",
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    try:
-        candidate_id = ObjectId(candidate_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid candidate_id")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
 
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF allowed")
+
+    original_filename = file.filename
 
     with NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         shutil.copyfileobj(file.file, tmp)
         temp_path = tmp.name
 
     try:
-        result = process_resume(temp_path, candidate_id, ocr_mode)
+        summary = process_resume(temp_path, ocr_mode)
+    
+        with open(temp_path, "rb") as f:
+            resume_id = resume_fs.put(
+                f,
+                filename=original_filename,
+                content_type="application/pdf"
+            )
+
+        resume_doc = {
+            "candidate_id": candidate_id,
+            "resume_number": candidate["total_resumes"]+1,
+            "summary": summary,
+            "file_id": resume_id,
+            "filename": original_filename,
+            "created_on": generate_timestamp(),
+            "total_sessions":0
+        }
+
+        resume_insert_result = resume_collection.insert_one(resume_doc)
+        resume_id = resume_insert_result.inserted_id
+
+        candidate_collection.update_one(
+            {"_id": candidate_id},
+            {
+                "$inc": {
+                    "total_resumes": 1
+                }
+            }
+    )
+
     finally:
         os.remove(temp_path)
 
     return {
-        "message": "upload done",
-        "summary_id": result["summary_id"]
+        "success": True
     }
+
 
 
 @router.get("/all")
-def get_all_resumes(candidate_id: str):
-    try:
-        candidate_id = ObjectId(candidate_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid candidate_id")
-
-    resumes = list(summary_collection.find(
-        {"Candidate_id": candidate_id},
-        {"Summary": 0}
-    ))
-
-    for r in resumes:
-        r["_id"] = str(r["_id"])
-        r["File_id"] = str(r["File_id"])
-
-    return {"resumes": resumes}
-
-
-@router.post("/questions")
-def generate_questions(
-    candidate_id: str,
-    summary_id: str,
-    num_questions: int
+def get_all_resume_ids(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    try:
-        candidate_id = ObjectId(candidate_id)
-        summary_id = ObjectId(summary_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid ID")
 
-    summary_doc = summary_collection.find_one({
-        "_id": summary_id,
-        "Candidate_id": candidate_id
-    })
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
 
-    if not summary_doc:
-        raise HTTPException(status_code=404, detail="Summary not found")
+    resumes = resume_collection.find(
+        {"candidate_id": candidate_id},
+        {"_id": 1, "resume_number":1, "file_id": 1, "filename": 1, "created_on":1}
+    ).sort("created_on", -1)
 
-    prompt = f"""
-    Based on the following resume summary, generate {num_questions} interview questions.
-    Return strictly JSON:
-    {{
-        "questions": ["q1", "q2", ...]
-    }}
+    resume_list = [
+        {
+            "resume_id": str(doc["_id"]),
+            "resume_number": doc.get("resume_number"),
+            "file_id": str(doc.get("file_id")) if doc.get("file_id") else None,
+            "filename": doc.get("filename"),
+            "created_on": doc.get("created_on")
+        }
+        for doc in resumes
+    ]
 
-    Resume Summary:
-    {summary_doc["Summary"]}
-    """
-
-    response = client_ai.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.4
-    )
-    print("####################################")
-    print(response)
-    print("####################################")
-    print("####################################")
-    print("####################################")
-    print("####################################")
-    print("####################################")
-    print("####################################")
-    print("####################################")
-    print("####################################")
-
-    print("####################################")
-
-    questions_json = json.loads(response.choices[0].message.content)
-
-    return questions_json
-
-
-
-@router.post("/submit-answers")
-def submit_answers(
-    candidate_id: str,
-    summary_id: str,
-    qa_data: dict
-):
-    # ------------------ Validate IDs ------------------
-    try:
-        candidate_id = ObjectId(candidate_id)
-        summary_id = ObjectId(summary_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid ID")
-
-    # ------------------ Fetch Summary ------------------
-    summary_doc = summary_collection.find_one({
-        "_id": summary_id,
-        "Candidate_id": candidate_id
-    })
-
-    if not summary_doc:
-        raise HTTPException(status_code=404, detail="Summary not found")
-
-    # ------------------ Validate QA Data ------------------
-    if not qa_data.get("questions") or not qa_data.get("answers"):
-        raise HTTPException(status_code=400, detail="Questions or answers missing")
-
-    # ------------------ Build Prompt ------------------
-    prompt = f"""
-    Resume Summary:
-    {summary_doc["Summary"]}
-
-    Questions:
-    {qa_data["questions"]}
-
-    Answers:
-    {qa_data["answers"]}
-
-    Evaluate each answer and return STRICTLY VALID JSON in this format:
-
-    {{
-        "feedback_per_question": [
-            {{
-                "question": "...",
-                "feedback": "...",
-                "score": 0-10
-            }}
-        ],
-        "overall_feedback": "...",
-        "score": 0-10
-    }}
-    """
-
-    # ------------------ Call OpenAI (JSON Mode) ------------------
-    try:
-        response = client_ai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            response_format={"type": "json_object"}   # 🔥 Critical line
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI call failed: {str(e)}")
-
-    # ------------------ Parse AI Response Safely ------------------
-    content = response.choices[0].message.content
-
-    if not content:
-        raise HTTPException(status_code=500, detail="Empty AI response")
-
-    try:
-        feedback_json = json.loads(content)
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Invalid JSON returned by AI: {content}"
-        )
-
-    # ------------------ Store in DB ------------------
-    question_doc = {
-        "Candidate_id": candidate_id,
-        "summary_id": summary_id,
-        "questions": qa_data["questions"],
-        "answers": qa_data["answers"],
-        "feedback": feedback_json,
-        "created_at": datetime.now()
+    return {
+        "success": True,
+        "resumes": resume_list
     }
 
-    inserted = question_collection.insert_one(question_doc)
 
-    # Append attempt ID into user Resume list
-    user_collection.update_one(
+
+
+@router.get("/file")
+def get_resume_file(
+    file_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    file_obj_id = verify_file_id(file_id)
+
+    grid_out = resume_fs.get(file_obj_id)
+
+    return StreamingResponse(
+        grid_out,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{grid_out.filename}"'
+        }
+    )
+
+
+
+
+
+@router.post("/questions/new")
+def generate_questions(
+    resume_id: str,
+    num_questions: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    resume, resume_id = verify_resume(resume_id, candidate_id)
+
+    session_number = resume["total_sessions"] + 1   
+
+    
+    previous_sessions = []
+    if session_number != 1:
+        previous_sessions = previous_session_questions(resume_id)
+
+
+
+    try:
+        questions_json = generate_resume_question(resume["summary"], num_questions, previous_sessions)
+        questions_list = questions_json["questions"]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+    
+    question_bank = []
+    time = num_questions * 10
+
+    for i, question in enumerate(questions_list, start=1):
+        question_bank.append({
+            "question_number": i,
+            "question": question,
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+
+
+    timestamp = generate_timestamp()
+    session_doc = {
+        "session_number": session_number,
+        "resume_id": resume_id,
+        "time": time,
+        "question_bank": question_bank,
+        "overall_feedback": "",
+        "overall_score": "",
+        "status": "active",
+        "timestamp": timestamp
+    }
+
+    inserted = resume_question_collection.insert_one(session_doc)
+    question_session_id = inserted.inserted_id
+
+    resume_collection.update_one(
+        {"_id": resume_id},
         {
-            "_id": candidate_id,
-            "Resume.summary_id": summary_id
-        },
-        {
-            "$push": {
-                "Resume.$.question_attempt_id": inserted.inserted_id
+            "$set": {
+                f"question_session_ids.{str(question_session_id)}": timestamp
+            },
+            "$inc": {
+                "total_sessions": 1
             }
         }
     )
 
-    feedback_json["attempt_id"] = str(inserted.inserted_id)
+    formatted_questions = {
+        i + 1: q for i, q in enumerate(questions_list)
+    }
 
-    return feedback_json
+    
+
+    return {
+        "resume_id": str(resume_id),
+        "question_session_id": str(question_session_id),
+        "time": time,
+        "questions": formatted_questions
+    }
 
 
-@router.get("/attempts/{summary_id}")
-def get_attempts(candidate_id: str, summary_id: str):
+
+
+
+
+
+
+
+@router.post("/questions/save")
+def save_answer(
+    resume_id: str,
+    question_session_id: str,
+    question_number: int,
+    answer: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+    verify_question_number(session_doc, question_number)
+
+
+    resume_question_collection.update_one(
+        {
+            "_id": session_obj_id,
+            "question_bank.question_number": question_number
+        },
+        {
+            "$set": {
+                "question_bank.$.answer": answer
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+@router.post("/questions/submit")
+def submit_session(
+    resume_id: str,
+    question_session_id: str,
+    frontend_timestamp: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+
 
     try:
-        candidate_id = ObjectId(candidate_id)
-        summary_id = ObjectId(summary_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid ID")
+        frontend_time = datetime.fromisoformat(frontend_timestamp)
 
-    attempts = list(question_collection.find({
-        "Candidate_id": candidate_id,
-        "summary_id": summary_id
-    }))
+        if frontend_time.tzinfo is not None:
+            frontend_time = frontend_time.astimezone(timezone.utc)
+        else:
+            frontend_time = frontend_time.replace(tzinfo=timezone.utc)
 
-    formatted_attempts = []
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid frontend timestamp format"
+        )
 
-    for attempt in attempts:
+    backend_time = generate_timestamp()
 
-        questions = attempt.get("questions", [])
-        answers = attempt.get("answers", [])
-        feedback_data = attempt.get("feedback", {})
-        feedback_per_question = feedback_data.get("feedback_per_question", [])
+    time_diff_seconds = abs((backend_time - frontend_time).total_seconds())
 
-        qa_list = []
+    if time_diff_seconds > 120:
+        raise HTTPException(
+            status_code=400,
+            detail="Submission time mismatch exceeds 2 minutes"
+        )
 
-        for i in range(len(questions)):
-            qa_list.append({
-                "question": questions[i],
-                "answer": answers[i] if i < len(answers) else None,
-                "feedback": feedback_per_question[i] if i < len(feedback_per_question) else None
-            })
+    resume_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": frontend_time,
+                "submitted_at_backend": backend_time,
+            }
+        }
+    )
 
-        formatted_attempts.append({
-            "attempt_id": str(attempt["_id"]),
-            "qa": qa_list,
-            "overall_feedback": feedback_data.get("overall_feedback"),
-            "timestamp": attempt.get("created_at")
+    return {"success": True}
+
+
+@router.post("/questions/autosubmit")
+def auto_submit_session(
+    resume_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+    if session_doc.get("status") == "passive":
+        return {"success": True, "message": "Already submitted"}
+
+
+    timestamp = session_doc.get("timestamp")
+    time = session_doc.get("time")
+
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    auto_submit_time = timestamp + timedelta(
+        minutes=time + 1
+    )
+
+    resume_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": auto_submit_time,
+                "submitted_at_backend": auto_submit_time
+            }
+        }
+    )
+
+    return {
+        "success": True
+    }
+
+
+@router.post("/questions/reattempt")
+def reattempt_session(
+    resume_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    old_session_doc, old_session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+
+    new_question_bank = []
+
+    for q in old_session_doc["question_bank"]:
+        new_question_bank.append({
+            "question_number": q["question_number"],
+            "question": q["question"],
+            "answer": "",
+            "feedback": "",
+            "score": ""
         })
 
-    return {"attempts": formatted_attempts}
+    timestamp = generate_timestamp()
+    new_doc = {
+        "session_number": old_session_doc["session_number"],
+        "resume_id": resume_obj_id,
+        "time": old_session_doc["time"],
+        "question_bank": new_question_bank,
+        "overall_feedback": "",
+        "overall_score": "",
+        "status": "active",
+        "timestamp": timestamp
+    }
+
+    inserted = resume_question_collection.insert_one(new_doc)
+    new_session_id = inserted.inserted_id
+
+    resume_collection.update_one(
+        {"_id": resume_obj_id},
+        {
+            "$set": {
+                f"question_session_ids.{str(new_session_id)}": timestamp
+            }
+        }
+    )
+
+    return {
+        "new_question_session_id": str(new_session_id)
+    }
+
+
+@router.post("/questions/feedback")
+def generate_feedback(
+    resume_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+    verify_session_status2(session_doc)
+
+    try:
+        feedback_result = evaluate_resume_answers(
+            resume_doc["summary"],
+            session_doc["question_bank"]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI evaluation failed: {str(e)}"
+        )
+
+    feedback_per_question = feedback_result["feedback_per_question"]
+    overall_feedback = feedback_result["overall_feedback"]
+    overall_score = feedback_result["overall_score"]
+
+    updated_question_bank = session_doc["question_bank"]
+
+    feedback_map = {
+        item["question_number"]: item
+        for item in feedback_per_question
+    }
+
+    for q in updated_question_bank:
+        qn = q["question_number"]
+        if qn in feedback_map:
+            q["feedback"] = feedback_map[qn]["feedback"]
+            q["score"] = feedback_map[qn]["score"]
+
+    resume_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "question_bank": updated_question_bank,
+                "overall_feedback": overall_feedback,
+                "overall_score": overall_score
+            }
+        }
+    )
+
+
+    return {
+        "question_session_id": str(session_obj_id),
+        "overall_feedback": overall_feedback,
+        "overall_score": overall_score,
+        "question_bank": updated_question_bank
+    }
+
+
+@router.get("/questions/sessions")
+def get_all_sessions(
+    resume_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+
+    sessions = resume_question_collection.find(
+        {"resume_id": resume_obj_id},
+        {
+            "_id": 1,
+            "session_number": 1,
+            "timestamp": 1
+        }
+    ).sort("timestamp", 1)
+
+    session_list = [
+        {
+            "question_session_id": str(doc["_id"]),
+            "session_number": doc.get("session_number"),
+            "timestamp": doc.get("timestamp")
+        }
+        for doc in sessions
+    ]
+
+    return {
+        "resume_id": str(resume_obj_id),
+        "sessions": session_list
+    }
+
+
+@router.get("/questions/data")
+def get_session_data(
+    resume_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+    session_doc["_id"] = str(session_doc["_id"])
+    session_doc["resume_id"] = str(session_doc["resume_id"])
+
+    return {
+        "resume_id": str(resume_obj_id),
+        "session": session_doc
+    }
+
+
+
+
+@router.delete("/delete")
+def delete_resume(
+    resume_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+
+    resume_question_collection.delete_many({
+        "resume_id": resume_obj_id
+    })
+
+    file_id = resume_doc.get("file_id")
+    if file_id:
+        resume_fs.delete(file_id)
+
+    resume_collection.delete_one({
+        "_id": resume_obj_id
+    })
+
+    return {"success": True}
+
+
+@router.delete("/questions/delete")
+def delete_session(
+    resume_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    count_same_number = resume_question_collection.count_documents({
+        "resume_id": resume_obj_id,
+        "session_number": session_number
+    })
+
+    if count_same_number == 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Can't delete complete session entirely, either reattempt or leave."
+        )
+
+    resume_question_collection.delete_one({
+        "_id": session_obj_id
+    })
+
+    return {"success": True}
+
+
+
+
+@router.post("/questions/delete-reattempt")
+def delete_and_reattempt(
+    resume_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+
+    new_question_bank = []
+
+    for q in session_doc["question_bank"]:
+        new_question_bank.append({
+            "question_number": q["question_number"],
+            "question": q["question"],
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+    timestamp = generate_timestamp()
+
+    resume_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "question_bank": new_question_bank,
+                "overall_feedback": "",
+                "overall_score": "",
+                "status": "active",
+                "timestamp": timestamp
+            },
+            "$unset": {
+                "submitted_at_frontend": "",
+                "submitted_at_backend": ""
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
+@router.post("/questions/combined-feedback")
+def combined_feedback_last_x_sessions(
+    resume_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+
+
+    sessions = list(resume_question_collection.find(
+        {"resume_id": resume_obj_id},
+        {"session_number": 1, "question_bank": 1, "timestamp": 1, "_id":1}
+    ))
+
+    latest = {}
+
+    for s in sessions:
+        sn = s["session_number"]
+        if sn not in latest or s["timestamp"] > latest[sn]["timestamp"]:
+            latest[sn] = s
+
+    if len(latest) <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 2 sessions for combined feedback"
+        )
+
+    sorted_sessions = sorted(
+        latest.values(),
+        key=lambda x: x["session_number"],
+        reverse=True
+    )
+
+    selected_sessions = sorted_sessions[:x]
+
+    session_dict = {}
+    sessions_used = {}
+
+    for s in selected_sessions:
+        sn = s["session_number"]
+        sid = str(s["_id"])
+        ts = s["timestamp"]
+
+        session_dict[f"session_{sn}"] = [
+            {"question": q["question"], "answer": q["answer"]}
+            for q in s["question_bank"]
+        ]
+
+        sessions_used[str(ts)] = {
+            "session_number": sn,
+            "session_id": sid
+        }
+
+    feedback = generate_combined_diff_session_feedback(resume_doc["summary"], session_dict)
+
+    resume_collection.update_one(
+        {"_id": resume_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type": "different",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+@router.post("/questions/session-progress-feedback")
+def combined_feedback_same_session(
+    resume_id: str,
+    question_session_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    attempts = list(resume_question_collection.find(
+        {
+            "resume_id": resume_obj_id,
+            "session_number": session_number
+        },
+        {"_id":1, "question_bank": 1, "timestamp": 1}
+    ).sort("timestamp", -1))
+
+    if len(attempts) <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 2 attempts for progress feedback"
+        )
+
+    selected = attempts[:x]
+
+    session_dict = {}
+    sessions_used = {}
+
+    for idx, s in enumerate(selected):
+        sid = str(s["_id"])
+        ts = s["timestamp"]
+
+        session_dict[f"session_{session_number}_{idx+1}"] = [
+            {"question": q["question"], "answer": q["answer"]}
+            for q in s["question_bank"]
+        ]
+
+        sessions_used[str(ts)] = {
+            "session_number": session_number,
+            "session_id": sid
+        }
+
+
+    feedback = generate_combined_same_session_feedback(resume_doc["summary"], session_dict)
+
+
+    resume_collection.update_one(
+        {"_id": resume_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type":"same",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+
+
+

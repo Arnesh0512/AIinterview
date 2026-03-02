@@ -1,3 +1,5 @@
-from datetime import timezone, timedelta
 
-IST = timezone(timedelta(hours=5, minutes=30))
+from datetime import datetime, timezone
+
+def generate_timestamp():
+    return datetime.now(timezone.utc)

@@ -1,36 +1,41 @@
 from fastapi import APIRouter
-from datetime import datetime, date
-from database import user_collection
-from utils.time import IST
+from datetime import datetime, timezone, date
+from database import candidate_collection
 from verify.token import verify_google_token,create_access_token
-from verify.user import verify_user_by_email
+from utils.time import generate_timestamp
+
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-@router.post("/user")
-def google_auth_user(data: dict):
+@router.post("/candidate")
+def google_auth_candidate(data: dict):
 
     idinfo = verify_google_token(data)
     email = idinfo["email"].lower()
 
-    user_collection = user_collection()
-    user = user_collection.find_one({"email": email})
-    if user:
-        user_id = str(user["_id"])
+    candidate = candidate_collection.find_one({"email": email})
+    if candidate:
+        candidate_id = str(candidate["_id"])
     else:
-        result = user_collection.insert_one({
+        result = candidate_collection.insert_one({
             "email": email,
-            "created_on": datetime.now(IST).isoformat(),
+            "created_on": generate_timestamp(),
         })
-        user_id = str(result.inserted_id)
+        candidate_id = str(result.inserted_id)
 
 
     today=date.today()
+    Year = today.year + (1 if today.month > 6 else 0)
+    Month = 6
+    Date = 30
+
+
+
     payload = {
-        "user_id":user_id,
+        "candidate_id":candidate_id,
         "email": email,
-        "role": "user",
-        "exp": datetime(today.year + (1 if today.month > 6 else 0),6,30, 18,30)
+        "role": "candidate",
+        "exp": datetime(Year, Month, Date , 18,30, tzinfo=timezone.utc)
     }
     
     access_token = create_access_token(payload)

@@ -1,247 +1,548 @@
-from fastapi import APIRouter, HTTPException
-from bson import ObjectId
-from datetime import datetime
-from database import user_collection, github_collection
-from github import scrape_all_projects, scrape_and_summarize_project
-from openai import OpenAI
-import os
-import json
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime, timezone, timedelta
+from database import github_collection, github_question_collection
+from verify.token import verify_access_token
+from verify.candidate import verify_candidate_payload
+from utils.github import fetch_repositories
+from prompt.github import process_repo, generate_github_question, evaluate_github_answers
+from verify.github import verify_github_link, verify_github_link_repo, verify_github, verify_question_number, verify_question_session, verify_session_status, verify_session_status2, verify_session_time
+from utils.time import generate_timestamp
 
-router = APIRouter(prefix="/github", tags=["GitHub"])
+router = APIRouter(
+    prefix="/github",
+    tags=["GitHub"]
+)
 
-client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-question_collection = github_collection.database["github_questions"]
-
-
-@router.post("/update")
-def update_repos(user_id: str):
-
-    try:
-        user_id = ObjectId(user_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid user_id")
-
-    projects = scrape_all_projects(user_id)
-
-    return {"message": "Repositories updated", "new_projects": projects}
+security = HTTPBearer()
 
 
+@router.post("/repos")
+def get_repositories(
+    github_link: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
 
-@router.get("/repos")
-def get_repos(user_id: str):
+    verify_github_link(github_link)
+    repo_list = fetch_repositories(github_link)
 
-    try:
-        user_id = ObjectId(user_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid user_id")
-
-    user = user_collection.find_one({"_id": user_id})
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return {"repos": user.get("github", {})}
-
-@router.post("/questions")
-def generate_repo_questions(user_id: str, repo_number: str, num_questions: int):
-
-    try:
-        user_id = ObjectId(user_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid user_id")
-
-    user = user_collection.find_one({"_id": user_id})
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if "github_repos" not in user or repo_number not in user["github_repos"]:
-        raise HTTPException(status_code=400, detail="Repository not found")
-
-    # Generate summary if missing
-    if repo_number not in user.get("github_sum", {}):
-        scrape_and_summarize_project(user_id, repo_number)
-
-    # Refresh user document
-    user = user_collection.find_one({"_id": user_id})
-
-    summary_id = user["github_sum"][repo_number]["summary_id"]
-    summary_doc = github_collection.find_one({"_id": summary_id})
-
-    if not summary_doc:
-        raise HTTPException(status_code=404, detail="Summary not found")
-
-    prompt = f"""
-    Based on this GitHub project summary, generate {num_questions} interview questions.
-
-    Return strictly JSON in this format:
-    {{
-        "questions": ["q1", "q2", ...]
-    }}
-
-    Summary:
-    {summary_doc["summary"]}
-    """
-
-    try:
-        response = client_ai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
-            response_format={"type": "json_object"}  # 🔥 THIS FIXES THE ERROR
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI call failed: {str(e)}")
-
-    content = response.choices[0].message.content
-
-    if not content:
-        raise HTTPException(status_code=500, detail="Empty AI response")
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Invalid JSON returned by AI")
-
-
-@router.post("/submit-answers")
-def submit_repo_answers(user_id: str, repo_number: str, qa_data: dict):
-
-    # ---------------- Validate user_id ----------------
-    try:
-        user_id = ObjectId(user_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid user_id")
-
-    user = user_collection.find_one({"_id": user_id})
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if "github_sum" not in user or repo_number not in user["github_sum"]:
-        raise HTTPException(status_code=400, detail="Repository summary not found")
-
-    summary_id = user["github_sum"][repo_number]["summary_id"]
-    summary_doc = github_collection.find_one({"_id": summary_id})
-
-    if not summary_doc:
-        raise HTTPException(status_code=404, detail="Summary document not found")
-
-    # ---------------- Validate QA Data ----------------
-    if not qa_data.get("questions") or not qa_data.get("answers"):
-        raise HTTPException(status_code=400, detail="Questions or answers missing")
-
-    # ---------------- Build Prompt ----------------
-    prompt = f"""
-    Project Summary:
-    {summary_doc["summary"]}
-
-    Questions:
-    {qa_data["questions"]}
-
-    Answers:
-    {qa_data["answers"]}
-
-    Evaluate each answer carefully.
-
-    Return strictly VALID JSON in this format:
-    {{
-        "feedback_per_question": [
-            {{
-                "question": "...",
-                "feedback": "..."
-            }}
-        ],
-        "overall_feedback": "...",
-        "score": 0-10
-    }}
-    """
-
-    # ---------------- Call OpenAI (FORCED JSON MODE) ----------------
-    try:
-        response = client_ai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            response_format={"type": "json_object"}  # 🔥 Critical Fix
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI call failed: {str(e)}")
-
-    content = response.choices[0].message.content
-
-    if not content:
-        raise HTTPException(status_code=500, detail="Empty AI response")
-
-    try:
-        feedback_json = json.loads(content)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Invalid JSON returned by AI")
-
-    # ---------------- Store Attempt ----------------
-    question_doc = {
-        "Candidate_id": user_id,
-        "repo_number": repo_number,
-        "summary_id": summary_id,
-        "questions": qa_data["questions"],
-        "answers": qa_data["answers"],
-        "feedback": feedback_json,
-        "created_at": datetime.now()
+    return {
+        "success": True,
+        "github_link": github_link,
+        "repositories": repo_list
     }
 
-    inserted = question_collection.insert_one(question_doc)
 
-    # Append attempt ID safely
-    user_collection.update_one(
-        {"_id": user_id},
+@router.post("/repo")
+def get_repository_details(
+    github_link: str,
+    repo_link: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    verify_github_link_repo(github_link, repo_link)
+    repo_details = process_repo(repo_link)
+
+    github_doc = {
+        "candidate_id": candidate_id,
+        "github_link": github_link,
+        "repo_name": repo_details["repo_name"],
+        "repo_link": repo_link,
+        "summary": repo_details["summary"],
+        "created_on": generate_timestamp()
+    }
+
+    github_insert_result = github_collection.insert_one(github_doc)
+    github_id = github_insert_result.inserted_id
+
+    return {
+        "success": True
+    }
+
+
+@router.get("/all")
+def get_all_github_ids(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    githubs = github_collection.find(
+        {"candidate_id": candidate_id},
+        {"_id": 1, "repo_name": 1, "repo_link": 1, "created_on":1}
+    ).sort("created_on", -1)
+
+    github_list = [
         {
-            "$push": {
-                f"github_sum.{repo_number}.question_id": inserted.inserted_id
+            "github_id": str(doc["_id"]),
+            "repo_name": doc.get("repo_name"),
+            "repo_link": doc.get("repo_link"),
+            "created_on": doc.get("created_on")
+        }
+        for doc in githubs
+    ]
+
+    return {
+        "success": True,
+        "githubs": github_list
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+@router.post("/questions/new")
+def generate_github_questions(
+    github_id: str,
+    num_questions: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+
+    try:
+        questions_json = generate_github_question(
+            github_doc["summary"],
+            num_questions
+        )
+        questions_list = questions_json["questions"]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+
+    question_bank = []
+    time = num_questions * 10
+
+    for i, question in enumerate(questions_list, start=1):
+        question_bank.append({
+            "question_number": i,
+            "question": question,
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+
+    nlist = github_question_collection.find(
+        {"github_id": github_obj_id},
+        {"session_number": 1, "_id": 0}
+    )
+    nlist = [doc["session_number"] for doc in nlist]
+    session_number = max(list(set(nlist))) + 1 if nlist else 1
+
+    timestamp = generate_timestamp()
+    session_doc = {
+        "session_number": session_number,
+        "github_id": github_obj_id,
+        "time": time,
+        "question_bank": question_bank,
+        "overall_feedback": "",
+        "overall_score": "",
+        "status": "active",
+        "timestamp": timestamp
+    }
+
+    inserted = github_question_collection.insert_one(session_doc)
+    question_session_id = inserted.inserted_id
+
+
+    github_collection.update_one(
+        {"_id": github_obj_id},
+        {
+            "$set": {
+                f"question_session_ids.{str(question_session_id)}":timestamp
             }
         }
     )
 
-    feedback_json["question_document_id"] = str(inserted.inserted_id)
+    formatted_questions = {
+        i + 1: q for i, q in enumerate(questions_list)
+    }
 
-    return feedback_json
+    return {
+        "github_id": str(github_obj_id),
+        "question_session_id": str(question_session_id),
+        "time": time,
+        "questions": formatted_questions
+    }
 
-@router.get("/history")
-def get_repo_history(user_id: str, repo_number: str):
+
+
+@router.post("/questions/save")
+def save_answer(
+    github_id: str,
+    question_session_id: str,
+    question_number: int,
+    answer: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+    verify_question_number(session_doc, question_number)
+
+
+    github_question_collection.update_one(
+        {
+            "_id": session_obj_id,
+            "question_bank.question_number": question_number
+        },
+        {
+            "$set": {
+                "question_bank.$.answer": answer
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
+
+
+
+
+
+@router.post("/questions/submit")
+def submit_session(
+    github_id: str,
+    question_session_id: str,
+    frontend_timestamp: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+
 
     try:
-        user_id = ObjectId(user_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid user_id")
+        frontend_time = datetime.fromisoformat(frontend_timestamp)
 
-    attempts = list(question_collection.find({
-        "Candidate_id": user_id,
-        "repo_number": repo_number
-    }))
+        if frontend_time.tzinfo is not None:
+            frontend_time = frontend_time.astimezone(timezone.utc)
+        else:
+            frontend_time = frontend_time.replace(tzinfo=timezone.utc)
 
-    formatted = []
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid frontend timestamp format"
+        )
 
-    for attempt in attempts:
+    backend_time = generate_timestamp()
 
-        questions = attempt.get("questions", [])
-        answers = attempt.get("answers", [])
-        feedback_data = attempt.get("feedback", {})
-        feedback_per_question = feedback_data.get("feedback_per_question", [])
+    time_diff_seconds = abs((backend_time - frontend_time).total_seconds())
 
-        qa_list = []
+    if time_diff_seconds > 120:
+        raise HTTPException(
+            status_code=400,
+            detail="Submission time mismatch exceeds 2 minutes"
+        )
 
-        for i in range(len(questions)):
-            qa_list.append({
-                "question": questions[i],
-                "answer": answers[i] if i < len(answers) else None,
-                "feedback": feedback_per_question[i] if i < len(feedback_per_question) else None
-            })
+    github_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": frontend_time,
+                "submitted_at_backend": backend_time,
+            }
+        }
+    )
 
-        formatted.append({
-            "attempt_id": str(attempt["_id"]),
-            "qa": qa_list,
-            "overall_feedback": feedback_data.get("overall_feedback"),
-            "timestamp": attempt.get("created_at")
+    return {"success": True}
+
+
+
+
+@router.post("/questions/autosubmit")
+def auto_submit_session(
+    github_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+
+    if session_doc.get("status") == "passive":
+        return {"success": True, "message": "Already submitted"}
+
+
+    timestamp = session_doc.get("timestamp")
+    time = session_doc.get("time")
+
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    auto_submit_time = timestamp + timedelta(
+        minutes=time + 1
+    )
+
+    github_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": auto_submit_time,
+                "submitted_at_backend": auto_submit_time
+            }
+        }
+    )
+
+    return {
+        "success": True
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@router.post("/questions/reattempt")
+def reattempt_session(
+    github_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    old_session_doc, old_session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+
+
+    new_question_bank = []
+
+    for q in old_session_doc["question_bank"]:
+        new_question_bank.append({
+            "question_number": q["question_number"],
+            "question": q["question"],
+            "answer": "",
+            "feedback": "",
+            "score": ""
         })
 
-    return {"history": formatted}
+    timestamp = generate_timestamp()
+    new_doc = {
+        "session_number": old_session_doc["session_number"],
+        "github_id": github_obj_id,
+        "time": old_session_doc["time"],
+        "question_bank": new_question_bank,
+        "overall_feedback": "",
+        "overall_score": "",
+        "status": "active",
+        "timestamp": timestamp
+    }
+
+    inserted = github_question_collection.insert_one(new_doc)
+    new_session_id = inserted.inserted_id
+
+    github_collection.update_one(
+        {"_id": github_obj_id},
+        {
+            "$set": {
+                f"question_session_ids.{str(new_session_id)}": timestamp
+            }
+        }
+    )
+
+    return {
+        "new_question_session_id": str(new_session_id)
+    }
+
+
+
+@router.post("/questions/feedback")
+def generate_feedback(
+    github_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+    verify_session_status2(session_doc)
+
+    try:
+        feedback_result = evaluate_github_answers(
+            github_doc["summary"],
+            session_doc["question_bank"]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI evaluation failed: {str(e)}"
+        )
+
+    feedback_per_question = feedback_result["feedback_per_question"]
+    overall_feedback = feedback_result["overall_feedback"]
+    overall_score = feedback_result["overall_score"]
+
+    updated_question_bank = session_doc["question_bank"]
+
+    feedback_map = {
+        item["question_number"]: item
+        for item in feedback_per_question
+    }
+
+    for q in updated_question_bank:
+        qn = q["question_number"]
+        if qn in feedback_map:
+            q["feedback"] = feedback_map[qn]["feedback"]
+            q["score"] = feedback_map[qn]["score"]
+
+    github_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "question_bank": updated_question_bank,
+                "overall_feedback": overall_feedback,
+                "overall_score": overall_score
+            }
+        }
+    )
+
+
+    return {
+        "question_session_id": str(session_obj_id),
+        "overall_feedback": overall_feedback,
+        "overall_score": overall_score,
+        "question_bank": updated_question_bank
+    }
+
+
+
+
+@router.get("/questions/sessions")
+def get_all_sessions(
+    github_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+
+    sessions = github_question_collection.find(
+        {"github_id": github_obj_id},
+        {
+            "_id": 1,
+            "session_number": 1,
+            "timestamp": 1
+        }
+    ).sort("timestamp", 1)
+
+    session_list = [
+        {
+            "question_session_id": str(doc["_id"]),
+            "session_number": doc.get("session_number"),
+            "timestamp": doc.get("timestamp")
+        }
+        for doc in sessions
+    ]
+
+    return {
+        "github_id": str(github_obj_id),
+        "sessions": session_list
+    }
+
+
+@router.get("/questions/history")
+def get_session_history(
+    github_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+
+    session_doc["_id"] = str(session_doc["_id"])
+    session_doc["github_id"] = str(session_doc["github_id"])
+
+    return {
+        "github_id": str(github_obj_id),
+        "session": session_doc
+    }
+

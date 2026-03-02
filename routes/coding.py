@@ -1,182 +1,587 @@
-from fastapi import APIRouter, HTTPException
-from bson import ObjectId
-from datetime import datetime
-from database import leetcode_collections, coding_collection, user_collection
-from openai import OpenAI
-from pydantic import BaseModel
-import os
-import random
-import json
+from fastapi import APIRouter, Depends,HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime, timezone, timedelta
+from database import leetcode, coding_collection, coding_question_collection
+from verify.token import verify_access_token
+from verify.candidate import verify_candidate_payload
+from constants.company import CompanyEnum
+from constants.tag import TagEnum
+from constants.difficulty import DifficultyEnum
+from constants.language import LanguageEnum
+from typing import Optional, List
+from verify.coding import verify_coding, verify_quantity, verify_question_session, verify_session_status, verify_session_time, verify_question_id, verify_session_status2
+from prompt.coding import evaluate_coding_answers
+from utils.time import generate_timestamp
 
 router = APIRouter(prefix="/leetcode", tags=["Coding"])
-
-client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-
-# ============================================================
-# Request Model for Code Submission (JSON Body)
-# ============================================================
-class CodeSubmission(BaseModel):
-    candidate_id: str
-    question_id: int
-    code_answer: str
+security = HTTPBearer()
 
 
-# ============================================================
-# 1️⃣ COMPANY BASED QUESTIONS
-# ============================================================
-@router.get("/company")
-def get_company_questions(candidate_id: str, company: str, n: int):
+@router.post("/start-coding")
+def start_coding(
+    company: Optional[List[CompanyEnum]] = None,
+    tag: Optional[List[TagEnum]] = None,
+    difficulty: Optional[List[DifficultyEnum]] = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
 
-    try:
-        ObjectId(candidate_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid candidate_id")
+    query = {}
 
-    query = {
-        "companies": {"$regex": company, "$options": "i"}
-    }
+    if company:
+        query["companies"] = {"$in": [c.value for c in company]}
 
-    questions = list(leetcode_collections.find(query))
+    if tag:
+        query["tags"] = {"$in": [t.value for t in tag]}
 
-    if not questions:
-        raise HTTPException(status_code=404, detail="No questions found")
 
-    selected = random.sample(questions, min(n, len(questions)))
+    if difficulty:
+        query["difficulty"] = {"$in": [d.value for d in difficulty]}
 
-    formatted = [
-        {
-            "question_id": q["question_id"],
-            "task_id": q.get("task_id"),
-            "problem_description": q["problem_description"]
+    available_ques = leetcode.count_documents(query)
+
+    if available_ques == 0:
+        return {
+            "success": False,
+            "message": "No questions found for given filters."
         }
-        for q in selected
-    ]
 
-    return {"questions": formatted}
-
-
-# ============================================================
-# 2️⃣ TOPIC BASED QUESTIONS
-# ============================================================
-@router.get("/topic")
-def get_topic_questions(candidate_id: str, topic: str, n: int):
-
-    try:
-        ObjectId(candidate_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid candidate_id")
-
-    query = {
-        "tags": {"$regex": topic, "$options": "i"}
-    }
-
-    questions = list(leetcode_collections.find(query))
-
-    if not questions:
-        raise HTTPException(status_code=404, detail="No questions found")
-
-    selected = random.sample(questions, min(n, len(questions)))
-
-    formatted = [
-        {
-            "question_id": q["question_id"],
-            "task_id": q.get("task_id"),
-            "problem_description": q["problem_description"]
-        }
-        for q in selected
-    ]
-
-    return {"questions": formatted}
-
-
-# ============================================================
-# 3️⃣ SUBMIT CODE (JSON BODY + coding_collection)
-# ============================================================
-@router.post("/submit")
-def submit_code(data: CodeSubmission):
-
-    # ---------- Validate Candidate ----------
-    try:
-        candidate_id = ObjectId(data.candidate_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid candidate_id")
-
-    question_doc = leetcode_collections.find_one({"question_id": data.question_id})
-
-    if not question_doc:
-        raise HTTPException(status_code=404, detail="Question not found")
-
-    # ---------- Build Prompt ----------
-    prompt = f"""
-    Problem:
-    {question_doc["problem_description"]}
-
-    Candidate Code:
-    {data.code_answer}
-
-    Evaluate this solution.
-
-    Provide:
-    - Correctness analysis
-    - Time complexity
-    - Space complexity
-    - Improvements
-    - Overall rating out of 10
-
-    Return strictly VALID JSON:
-    {{
-        "correctness": "...",
-        "time_complexity": "...",
-        "space_complexity": "...",
-        "improvements": "...",
-        "rating": 0-10
-    }}
-    """
-
-    # ---------- Call OpenAI (FORCED JSON MODE) ----------
-    try:
-        response = client_ai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            response_format={"type": "json_object"}  # 🔥 prevents JSON errors
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI evaluation failed: {str(e)}")
-
-    content = response.choices[0].message.content
-
-    if not content:
-        raise HTTPException(status_code=500, detail="Empty AI response")
-
-    try:
-        feedback_json = json.loads(content)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Invalid JSON returned by AI")
-
-    # ---------- Store Attempt in coding_collection ----------
     coding_doc = {
-        "Candidate_id": candidate_id,
-        "question_id": data.question_id,
-        "problem": question_doc["problem_description"],
-        "answer": data.code_answer,
-        "feedback": feedback_json,
-        "created_at": datetime.now()
+    "candidate_id": candidate_id,
+    "company": [c.value for c in company] if company else [],
+    "difficulty": [d.value for d in difficulty] if difficulty else [],
+    "tag": [t.value for t in tag] if tag else [],
+    "available_ques": available_ques,
+    "created_on": generate_timestamp()
+    }
+    
+    result = coding_collection.insert_one(coding_doc)
+
+    return {
+        "success": True
     }
 
-    inserted = coding_collection.insert_one(coding_doc)
 
-    # Append to user's coding attempts
-    user_collection.update_one(
-        {"_id": candidate_id},
+
+
+@router.get("/all")
+def get_all_coding_ids(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    codings = coding_collection.find(
+        {"candidate_id": candidate_id},
+        {"candidate_id": 0}
+    ).sort("created_on", -1)
+
+    coding_list = []
+
+    for doc in codings:
+        coding_list.append({
+            "coding_id": str(doc["_id"]),
+            "company": doc.get("company", []),
+            "difficulty": doc.get("difficulty", []),
+            "tag": doc.get("tag", []),
+            "available_ques": doc.get("available_ques"),
+            "created_on": doc.get("created_on")
+        })
+
+    return {
+        "success": True,
+        "codings": coding_list
+    }
+
+
+
+
+@router.post("/questions/new")
+def generate_questions(
+    coding_id: str,
+    num_questions: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    coding, coding_id = verify_coding(coding_id, candidate_id)
+
+    verify_quantity(num_questions, coding)
+
+
+    query = {}
+
+    if coding.get("company"):
+        query["companies"] = {"$in": coding["company"]}
+
+    if coding.get("tag"):
+        query["tags"] = {"$in": coding["tag"]}
+
+    if coding.get("difficulty"):
+        query["difficulty"] = {"$in": coding["difficulty"]}
+
+
+    pipeline = [
+        {"$match": query},
+        {"$sample": {"size": num_questions}}
+    ]
+
+    questions_cursor = leetcode.aggregate(pipeline)
+    questions_list = list(questions_cursor)
+
+    question_bank = []
+    time = num_questions * 60
+
+    for q in questions_list:
+        question_bank.append({
+            "question_id": q["question_id"],
+            "language": "",
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+    nlist = coding_question_collection.find(
+        {"coding_id": coding_id},
+        {"session_number": 1, "_id": 0}
+    )
+    nlist = [doc["session_number"] for doc in nlist]
+    session_number = max(nlist) + 1 if nlist else 1
+
+    timestamp = generate_timestamp()
+    session_doc = {
+        "session_number": session_number,
+        "coding_id": coding_id,
+        "time": time,
+        "question_bank": question_bank,
+        "overall_feedback": "",
+        "overall_score": "",
+        "status": "active",
+        "timestamp": timestamp
+    }
+
+    inserted = coding_question_collection.insert_one(session_doc)
+    question_session_id = inserted.inserted_id
+
+
+    coding_collection.update_one(
+        {"_id": coding_id},
         {
-            "$push": {
-                "coding": inserted.inserted_id
+            "$set": {
+                f"question_session_ids.{str(question_session_id)}": timestamp
             }
         }
     )
 
-    feedback_json["coding_document_id"] = str(inserted.inserted_id)
+    formatted_questions = [
+        {
+            "question_id": q["question_id"],
+            "task_name": q["task_name"],
+            "problem_description": q["problem_description"]
+        }
+        for q in questions_list
+    ]
 
-    return feedback_json
+    return {
+        "coding_id": str(coding_id),
+        "question_session_id": str(question_session_id),
+        "time": time,
+        "questions": formatted_questions
+    }
+
+
+
+
+@router.post("/questions/save")
+def save_answer(
+    coding_id: str,
+    question_session_id: str,
+    question_id: int,
+    language: LanguageEnum ,
+    answer: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+
+
+
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+    verify_question_id(session_doc, question_id)
+
+
+    coding_question_collection.update_one(
+        {
+            "_id": session_obj_id,
+            "question_bank.question_id": question_id
+        },
+        {
+            "$set": {
+                "question_bank.$.language": language,
+                "question_bank.$.answer": answer
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@router.post("/questions/submit")
+def submit_session(
+    coding_id: str,
+    question_session_id: str,
+    frontend_timestamp: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+
+
+    try:
+        frontend_time = datetime.fromisoformat(frontend_timestamp)
+
+        if frontend_time.tzinfo is not None:
+            frontend_time = frontend_time.astimezone(timezone.utc)
+        else:
+            frontend_time = frontend_time.replace(tzinfo=timezone.utc)
+
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid frontend timestamp format"
+        )
+
+    backend_time = generate_timestamp()
+
+    time_diff_seconds = abs((backend_time - frontend_time).total_seconds())
+
+    if time_diff_seconds > 120:
+        raise HTTPException(
+            status_code=400,
+            detail="Submission time mismatch exceeds 2 minutes"
+        )
+
+    coding_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": frontend_time,
+                "submitted_at_backend": backend_time,
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+@router.post("/questions/autosubmit")
+def auto_submit_session(
+    coding_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+    if session_doc.get("status") == "passive":
+        return {"success": True, "message": "Already submitted"}
+
+
+    timestamp = session_doc.get("timestamp")
+    time = session_doc.get("time")
+
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    auto_submit_time = timestamp + timedelta(
+        minutes=time + 1
+    )
+
+    coding_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": auto_submit_time,
+                "submitted_at_backend": auto_submit_time
+            }
+        }
+    )
+
+    return {
+        "success": True
+    }
+
+
+
+
+
+@router.post("/questions/reattempt")
+def reattempt_session(
+    coding_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    old_session_doc, old_session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+
+    new_question_bank = []
+
+    for q in old_session_doc["question_bank"]:
+        new_question_bank.append({
+            "question_id": q["question_id"],
+            "language": "",
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+    timestamp = generate_timestamp()
+    new_doc = {
+        "session_number": old_session_doc["session_number"],
+        "coding_id": coding_obj_id,
+        "time": old_session_doc["time"],
+        "question_bank": new_question_bank,
+        "overall_feedback": "",
+        "overall_score": "",
+        "status": "active",
+        "timestamp": timestamp
+    }
+
+    inserted = coding_question_collection.insert_one(new_doc)
+    new_session_id = inserted.inserted_id
+
+    coding_collection.update_one(
+        {"_id": coding_obj_id},
+        {
+            "$set": {
+                f"question_session_ids.{str(new_session_id)}": timestamp
+            }
+        }
+    )
+
+    return {
+        "new_question_session_id": str(new_session_id)
+    }
+
+
+
+@router.post("/questions/feedback")
+def generate_feedback(
+    coding_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+    verify_session_status2(session_doc)
+
+    
+
+    question_ids = [q["question_id"] for q in session_doc.get("question_bank")]
+    question_docs = list(
+        leetcode.find(
+            {"question_id": {"$in": question_ids}},
+            {"question_id": 1, "problem_description": 1, "_id": 0}
+        )
+    )
+    question_map = {
+        doc["question_id"]: doc["problem_description"]
+        for doc in question_docs
+    }
+
+    enriched_questions = []
+    for q in session_doc.get("question_bank"):
+        qid = q["question_id"]
+
+        enriched_questions.append({
+            "question_id": qid,
+            "problem_description": question_map[qid],
+            "language": q.get("language"),
+            "answer": q.get("answer", "")
+        })
+
+    
+    try:
+        feedback_result = evaluate_coding_answers(enriched_questions)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI evaluation failed: {str(e)}"
+        )
+
+    feedback_per_question = feedback_result["feedback_per_question"]
+    overall_feedback = feedback_result["overall_feedback"]
+    overall_score = feedback_result["overall_score"]
+
+    feedback_map = {
+        item["question_id"]: item
+        for item in feedback_per_question
+    }
+
+    updated_question_bank = session_doc.get("question_bank")
+
+    for q in updated_question_bank:
+        qid = q["question_id"]
+        if qid in feedback_map:
+            q["feedback"] = feedback_map[qid]["feedback"]
+            q["score"] = feedback_map[qid]["score"]
+
+    coding_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "question_bank": updated_question_bank,
+                "overall_feedback": overall_feedback,
+                "overall_score": overall_score
+            }
+        }
+    )
+
+    return {
+        "question_session_id": str(session_obj_id),
+        "overall_feedback": overall_feedback,
+        "overall_score": overall_score,
+        "question_bank": updated_question_bank
+    }
+
+
+@router.get("/questions/sessions")
+def get_all_sessions(
+    coding_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+
+    sessions = coding_question_collection.find(
+        {"coding_id": coding_obj_id},
+        {
+            "_id": 1,
+            "session_number": 1,
+            "timestamp": 1
+        }
+    ).sort("timestamp", 1)
+
+    session_list = [
+        {
+            "question_session_id": str(doc["_id"]),
+            "session_number": doc.get("session_number"),
+            "timestamp": doc.get("timestamp")
+        }
+        for doc in sessions
+    ]
+
+    return {
+        "coding_id": str(coding_obj_id),
+        "sessions": session_list
+    }
+
+
+
+@router.get("/questions/history")
+def get_session_history(
+    coding_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+    session_doc["_id"] = str(session_doc["_id"])
+    session_doc["coding_id"] = str(session_doc["coding_id"])
+
+    return {
+        "coding_id": str(coding_obj_id),
+        "session": session_doc
+    }
+
+
+
+
+
+
+
+
+
+
