@@ -54,7 +54,7 @@ def register_candidate(
 
 
 
-@router.patch("/change-details")
+@router.put("/change-details")
 def change_candidate_details(
     candidate_data: CandidateCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security)

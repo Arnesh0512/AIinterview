@@ -1,36 +1,9 @@
-import fitz
-import pytesseract
-from pdf2image import convert_from_path
+from database import concept_question_collection
 from bson import ObjectId
-from database import resume_question_collection
 from fastapi import HTTPException
 
-
-
-def extract_text_without_ocr(pdf_path):
-    text = ""
-    doc = fitz.open(pdf_path)
-    for page in doc:
-        text += page.get_text()
-        
-    return text
-
-
-def extract_text_with_ocr(pdf_path):
-    text = ""
-    pages = convert_from_path(pdf_path, dpi=400)
-
-    for page in pages:
-        text += pytesseract.image_to_string(page)
-        text += "\n"
-
-    return text
-
-
-
-
-def previous_resume_session_questions(
-    resume_id: ObjectId,
+def previous_concept_session_questions(
+    concept_id: ObjectId,
     x: int = None,
     session_number: int = None,
 ):
@@ -38,13 +11,13 @@ def previous_resume_session_questions(
     session_dict = {}
     sessions_used = {}
     
-    search_query = {"resume_id": resume_id}
+    search_query = {"concept_id": concept_id}
 
     if session_number:
         search_query["session_number"] = session_number
 
     all_sessions = list(
-        resume_question_collection.find(
+        concept_question_collection.find(
             search_query,
             {
                 "_id": 1,
@@ -76,7 +49,7 @@ def previous_resume_session_questions(
 
     if x:
         sorted_sessions = sorted_sessions[:x]
-        
+
     if len(sorted_sessions) <= 1:
         raise HTTPException(
             status_code=400,
@@ -100,8 +73,4 @@ def previous_resume_session_questions(
         }
 
     return session_dict, sessions_used
-
-
-
-    
 

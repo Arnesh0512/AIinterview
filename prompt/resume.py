@@ -87,19 +87,33 @@ You are a senior technical interviewer conducting a multi-round adaptive intervi
 
 You will receive:
 1) Resume Summary
-2) Previous Interview Sessions (list format)
+2) Previous Interview Sessions
 
-IMPORTANT INTERPRETATION RULES:
+Previous Sessions are provided as a dictionary in the following format:
 
-- If Previous Sessions is an empty list ([]):
+{{
+    "session_1": {{
+        "Question text 1": "Answer text 1",
+        "Question text 2": "Answer text 2"
+    }},
+    "session_2": {{
+        ...
+    }}
+}}
+
+INTERPRETATION RULES:
+
+- If Previous Sessions is an empty dictionary ({{}}):
   → This means this is the FIRST interview round.
   → Generate foundational to intermediate level questions.
   → Cover major technical skills from the resume.
   → Ensure broad coverage.
 
 - If Previous Sessions contains data:
-  → This means previous interview rounds already happened.
-  → Each session contains questions and the candidate's answers.
+  → Each key represents one completed session.
+  → session_1 is the most recent session.
+  → Higher session numbers are older sessions.
+  → Each session contains question-answer mappings.
   → You must:
       - Avoid repeating previous questions
       - Identify weak or shallow answers
@@ -108,16 +122,17 @@ IMPORTANT INTERPRETATION RULES:
       - Increase overall difficulty progressively
       - Focus more on:
             * Weak areas
-            * Partially answered questions
-            * Important but previously unasked topics
+            * Partially answered topics
+            * Important but previously unasked areas
+            * Depth expansion in strong areas
 
 Question Generation Rules:
 - Generate exactly {num_questions} questions.
 - Each list item must contain ONLY ONE question.
-- Do not combine multiple questions into one.
-- Include a mix of conceptual and practical/system design questions.
+- Do NOT combine multiple questions into one.
+- Include a mix of conceptual, practical, and system design questions where appropriate.
 - Ensure increasing difficulty order within this round.
-- Questions must be relevant to the resume.
+- Questions must be strictly relevant to the resume.
 - Do NOT mention previous sessions explicitly in the question text.
 - Do NOT provide answers.
 - Do NOT add explanations.
@@ -221,7 +236,7 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "evaluation_output",
+            "name": "resume_evaluation_output",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -269,33 +284,43 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
 
 
 
-def generate_combined_diff_session_feedback(summary_text: str, session_data: dict):
+def generate_resume_combined_diff_session_feedback(summary_text: str, session_data: dict):
 
     prompt = """
 You are a senior technical interview evaluator.
 
-You will receive multiple completed interview sessions.
-Each session contains question-answer pairs.
-You will also receive candidate resume summary, answers must be based on it.
+You will receive:
+1) Candidate Resume Summary
+2) Multiple completed interview sessions.
 
-Sessions are provided as a dictionary:
+Sessions are provided as a dictionary in this format:
+
 {
-  "session_i": [
-      {"question": "...", "answer": "..."},
-      ...
-  ],
-  ...
+    "session_1": {
+        "Question text 1": "Answer text 1",
+        "Question text 2": "Answer text 2"
+    },
+    "session_2": {
+        ...
+    }
 }
 
+Interpretation Rules:
+
+- session_1 is the most recent session.
+- Higher session numbers represent older sessions.
+- Each key inside a session represents a question, and its value is the candidate's answer.
+
 Instructions:
-- Evaluate overall technical progression
-- Identify improvement patterns
-- Identify repeated weaknesses
-- Identify strengths
-- Evaluate depth growth across sessions
-- Be strict and analytical
-- Provide professional structured feedback
-- Do NOT mention JSON or formatting
+- Evaluate overall technical progression across sessions.
+- Identify improvement patterns.
+- Identify repeated weaknesses.
+- Identify consistent strengths.
+- Evaluate depth growth and conceptual maturity.
+- Compare recent performance vs older performance.
+- Be strict, analytical, and professional.
+- Provide structured feedback (strengths, weaknesses, progression, recommendations).
+- Do NOT mention JSON or formatting.
 
 Return strictly valid JSON:
 {
@@ -314,7 +339,7 @@ Return strictly valid JSON:
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "combined_feedback_output",
+            "name": "resume_combined_feedback_output",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -338,36 +363,44 @@ Return strictly valid JSON:
 
 
 
-def generate_combined_same_session_feedback(summary_text: str, session_data: dict):
+def generate_resume_combined_same_session_feedback(summary_text: str, session_data: dict):
 
     prompt = """
 You are a senior technical interview evaluator.
 
-You will receive multiple completed interview sessions.
-Each session contains question-answer pairs.
-All sessions provided are same session they are just reattempted over time,
-latest session is in starting ,oldest session is in last 
-You will also receive candidate resume summary, answers must be based on it.
+You will receive:
+1) Candidate Resume Summary
+2) Multiple reattempts of the SAME interview session.
 
-Sessions are provided as a dictionary:
+Sessions are provided as a dictionary in this format:
+
 {
-  "session_i_numx": [
-      {"question": "...", "answer": "..."},
-      ...
-  ],
-  ...
+    "session_1": {
+        "Question text 1": "Answer text 1",
+        "Question text 2": "Answer text 2"
+    },
+    "session_2": {
+        ...
+    }
 }
-smaller the numx is more latest it is
+
+Interpretation Rules:
+
+- session_1 is the most recent attempt.
+- Higher session numbers represent older attempts.
+- Each key inside a session represents a question, and its value is the candidate's answer.
+- All sessions correspond to the same interview round repeated over time.
 
 Instructions:
-- Evaluate overall technical progression
-- Identify improvement patterns
-- Identify repeated weaknesses
-- Identify strengths
-- Evaluate depth growth across sessions
-- Be strict and analytical
-- Provide professional structured feedback
-- Do NOT mention JSON or formatting
+- Evaluate progression across reattempts.
+- Identify areas of improvement.
+- Identify areas where mistakes persist.
+- Identify conceptual clarity growth.
+- Compare latest attempt with older attempts.
+- Evaluate depth improvement and correction of past weaknesses.
+- Be strict, analytical, and professional.
+- Provide structured feedback (improvement, weaknesses, strengths, recommendations).
+- Do NOT mention JSON or formatting.
 
 Return strictly valid JSON:
 {
@@ -386,7 +419,7 @@ Return strictly valid JSON:
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "combined_feedback_output",
+            "name": "resume_combined_feedback_output",
             "schema": {
                 "type": "object",
                 "properties": {

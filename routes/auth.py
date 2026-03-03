@@ -12,6 +12,7 @@ def google_auth_candidate(data: dict):
 
     idinfo = verify_google_token(data)
     email = idinfo["email"].lower()
+    profile_pic = idinfo["picture"],
 
     candidate = candidate_collection.find_one({"email": email})
     if candidate:
@@ -19,6 +20,7 @@ def google_auth_candidate(data: dict):
     else:
         result = candidate_collection.insert_one({
             "email": email,
+            "profile_pic": profile_pic,
             "created_on": generate_timestamp(),
         })
         candidate_id = str(result.inserted_id)

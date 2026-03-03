@@ -22,6 +22,7 @@ def verify_google_token(data: dict|None) -> dict:
             requests.Request(),
             GOOGLE_CLIENT_ID
         )
+        print(idinfo)
         return idinfo
 
     except Exception:

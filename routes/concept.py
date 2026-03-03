@@ -1,13 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timezone, timedelta
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from database import concept_collection, concept_question_collection
+from database import concept_collection, concept_question_collection, candidate_collection
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
 from constants.topic import TopicEnum
 from typing import List
 from verify.concept import verify_concept, verify_question_number, verify_question_session, verify_session_status, verify_session_time, verify_session_status2
-from prompt.concept import generate_cs_topic_questions, evaluate_cs_topic_answers
+from prompt.concept import generate_concept_topic_questions, evaluate_concept_topic_answers, generate_concept_combined_diff_session_feedback, generate_concept_combined_same_session_feedback
+from utils.concept import previous_concept_session_questions
 from utils.time import generate_timestamp
 
 router = APIRouter(prefix="/concept", tags=["Conceptual"])
@@ -31,11 +32,22 @@ def start_concept(
 
     concept_doc = {
     "candidate_id": candidate_id,
+    "concept_number": candidate["total_concepts"]+1,
     "topic": [t.value for t in topic] if topic else [],
-    "created_on": generate_timestamp()
+    "created_on": generate_timestamp(),
+    "total_sessions":0
     }
     
     result = concept_collection.insert_one(concept_doc)
+
+    candidate_collection.update_one(
+        {"_id": candidate_id},
+        {
+            "$inc": {
+                "total_concepts": 1
+            }
+        }
+    )
 
     return {
         "success": True
@@ -60,6 +72,7 @@ def get_all_concept_ids(
     concept_list = [
         {
             "concept_id": str(doc["_id"]),
+            "concept_number": doc.get("concept_number"),
             "topic": doc.get("topic", []),
             "created_on": doc.get("created_on")
         }
@@ -85,10 +98,23 @@ def generate_questions(
     token = credentials.credentials
     payload = verify_access_token(token)
     candidate, candidate_id, email = verify_candidate_payload(payload)
+    
     concept, concept_id = verify_concept(concept_id, candidate_id)
+    session_number = concept["total_sessions"] + 1   
+
+    previous_sessions = {}
+    if session_number != 1:
+        previous_sessions,_ = previous_concept_session_questions(concept_id)
+
+
 
     try:
-        questions_json = generate_cs_topic_questions(concept["topic"], num_questions)
+        questions_json = generate_concept_topic_questions(
+            concept["topic"],
+            num_questions,
+            previous_sessions
+        )
+        
         questions_list = questions_json["questions"]
 
     except Exception as e:
@@ -106,12 +132,6 @@ def generate_questions(
             "score": ""
         })
 
-    nlist = concept_question_collection.find(
-        {"concept_id": concept_id},
-        {"session_number": 1, "_id": 0}
-    )
-    nlist = [doc["session_number"] for doc in nlist]
-    session_number = max(list(set(nlist))) + 1 if nlist else 1
 
     timestamp = generate_timestamp()
     session_doc = {
@@ -133,6 +153,9 @@ def generate_questions(
         {
             "$set": {
                 f"question_session_ids.{str(question_session_id)}": timestamp
+            },
+            "$inc": {
+                "total_sessions": 1
             }
         }
     )
@@ -255,7 +278,7 @@ def submit_session(
 
 
 
-@router.post("/questions/autosubmit")
+@router.patch("/questions/autosubmit")
 def auto_submit_session(
     concept_id: str,
     question_session_id: str,
@@ -306,7 +329,7 @@ def auto_submit_session(
 
 
 
-@router.post("/questions/reattempt")
+@router.put("/questions/reattempt")
 def reattempt_session(
     concept_id: str,
     question_session_id: str,
@@ -365,7 +388,7 @@ def reattempt_session(
 
 
 
-@router.post("/questions/feedback")
+@router.get("/questions/feedback")
 def generate_feedback(
     concept_id: str,
     question_session_id: str,
@@ -384,7 +407,7 @@ def generate_feedback(
     verify_session_status2(session_doc)
 
     try:
-        feedback_result = evaluate_cs_topic_answers(
+        feedback_result = evaluate_concept_topic_answers(
             concept_doc["topic"],
             session_doc["question_bank"]
         )
@@ -469,8 +492,8 @@ def get_all_sessions(
 
 
 
-@router.get("/questions/history")
-def get_session_history(
+@router.get("/questions/data")
+def get_session_data(
     concept_id: str,
     question_session_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -492,6 +515,222 @@ def get_session_history(
         "concept_id": str(concept_obj_id),
         "session": session_doc
     }
+
+
+
+
+@router.delete("/delete")
+def delete_concept(
+    concept_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
+
+    concept_question_collection.delete_many({
+        "concept_id": concept_obj_id
+    })
+
+    concept_collection.delete_one({
+        "_id": concept_obj_id
+    })
+
+    return {"success": True}
+
+
+@router.delete("/questions/delete")
+def delete_session(
+    concept_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        concept_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    count_same_number = concept_question_collection.count_documents({
+        "concept_id": concept_obj_id,
+        "session_number": session_number
+    })
+
+    if count_same_number == 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Can't delete complete session entirely, either reattempt or leave."
+        )
+
+    concept_question_collection.delete_one({
+        "_id": session_obj_id
+    })
+
+    return {"success": True}
+
+
+
+
+@router.put("/questions/delete-reattempt")
+def delete_and_reattempt(
+    concept_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        concept_obj_id
+    )
+
+
+    new_question_bank = []
+
+    for q in session_doc["question_bank"]:
+        new_question_bank.append({
+            "question_number": q["question_number"],
+            "question": q["question"],
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+    timestamp = generate_timestamp()
+
+    concept_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "question_bank": new_question_bank,
+                "overall_feedback": "",
+                "overall_score": "",
+                "status": "active",
+                "timestamp": timestamp
+            },
+            "$unset": {
+                "submitted_at_frontend": "",
+                "submitted_at_backend": ""
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
+@router.get("/questions/combined-feedback")
+def combined_feedback_last_x_sessions(
+    concept_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
+
+    session_dict, sessions_used = previous_concept_session_questions(
+    concept_obj_id,x=x)
+    
+    feedback = generate_concept_combined_diff_session_feedback(concept_doc["topic"], session_dict)
+
+    concept_collection.update_one(
+        {"_id": concept_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type": "different",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+@router.get("/questions/session-progress-feedback")
+def combined_feedback_same_session(
+    concept_id: str,
+    question_session_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        concept_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    session_dict, sessions_used = previous_concept_session_questions(
+    concept_obj_id,
+    x=x,
+    session_number=session_number)
+
+    feedback = generate_concept_combined_same_session_feedback(concept_doc["topic"], session_dict)
+
+
+    concept_collection.update_one(
+        {"_id": concept_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type":"same",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+
 
 
 

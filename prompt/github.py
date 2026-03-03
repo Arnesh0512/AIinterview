@@ -83,54 +83,97 @@ def process_repo(selected_repo_link):
     }
 
 
-
-
-def generate_github_question(repo_summary: str, num_questions: int):
+def generate_github_question(
+    repo_summary: str,
+    num_questions: int,
+    previous_sessions: list
+):
 
     prompt = f"""
-    You are a senior technical interviewer.
+You are a senior technical interviewer conducting a multi-round adaptive interview.
 
-    Based on the repository summary below, generate {num_questions} 
-    deep technical interview questions.
+You will receive:
+1) Repository Summary
+2) Previous Interview Sessions
 
-    Questions should test:
-    - Architecture understanding
-    - Code design decisions
-    - Technology choices
-    - Scalability
-    - Optimization
-    - Edge cases
-    - Security considerations
+Previous Sessions are provided as a dictionary in the following format:
 
-    Questions must:
-    - Be specific to this project
-    - Not generic
-    - Encourage deep explanation
-    - Be open-ended
-
-    Return strictly in JSON format:
-
-    {{
-        "questions": ["question1", "question2", ...]
+{{
+    "session_1": {{
+        "Question text 1": "Answer text 1",
+        "Question text 2": "Answer text 2"
+    }},
+    "session_2": {{
+        ...
     }}
-    #Dont ask multiple questions in any single question. Each question should be standalone and focused on one aspect.
-    """
+}}
+
+INTERPRETATION RULES:
+
+- If Previous Sessions is an empty dictionary ({{}}):
+  → This means this is the FIRST interview round.
+  → Generate foundational to intermediate level questions.
+  → Cover major architectural and technical components.
+  → Ensure broad coverage of the project.
+
+- If Previous Sessions contains data:
+  → session_1 is the most recent session.
+  → Higher session numbers represent older sessions.
+  → Each key inside a session is a question and its value is the candidate’s answer.
+  → You must:
+      - Avoid repeating previous questions
+      - Identify weak or shallow answers
+      - Identify strong architectural understanding
+      - Identify untouched components of the repository
+      - Increase overall difficulty progressively
+      - Focus more on:
+            * Weak architectural explanations
+            * Scalability gaps
+            * Edge cases not discussed
+            * Security considerations not explored
+            * Deep system-level reasoning
+
+Question Generation Rules:
+- Generate exactly {num_questions} questions.
+- Each list item must contain ONLY ONE question.
+- Do NOT combine multiple questions into one.
+- Include a mix of:
+      * Architecture understanding
+      * Design decisions
+      * Scalability
+      * Optimization
+      * Edge cases
+      * Security considerations
+- Ensure increasing difficulty order within this round.
+- Questions must be highly specific to the repository.
+- Do NOT mention previous sessions explicitly in the question text.
+- Do NOT provide answers.
+- Do NOT add explanations.
+
+Return strictly valid JSON in this format:
+{{"questions": ["q1", "q2", ..., "qn"]}}
+"""
 
     content = f"""
-    Repository Summary:
-    {repo_summary}
-    """
+Repository Summary:
+{repo_summary}
+
+Previous Sessions:
+{json.dumps(previous_sessions, indent=2)}
+"""
 
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "github_questions",
+            "name": "github_question_output",
             "schema": {
                 "type": "object",
                 "properties": {
                     "questions": {
                         "type": "array",
-                        "items": {"type": "string"}
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "required": ["questions"]
@@ -143,9 +186,13 @@ def generate_github_question(repo_summary: str, num_questions: int):
     try:
         response_content = response.choices[0].message.content
         response_json = json.loads(response_content)
-        if not isinstance(response_json["questions"], list):
+
+        if not isinstance(response_json.get("questions"), list):
             raise ValueError("Questions must be a list")
-        
+
+        if len(response_json["questions"]) != num_questions:
+            raise ValueError("Incorrect number of questions returned")
+
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -156,13 +203,12 @@ def generate_github_question(repo_summary: str, num_questions: int):
 
 
 
-
 def evaluate_github_answers(repo_summary: str, question_bank: list):
 
     prompt = """
     You are a senior software architect and technical interviewer.
 
-    You are evaluating answers related to a GitHub repository project.
+    You are evaluating answers related to a GitHub repository project based on his provided repository summary.
 
     Evaluate each answer based on:
 
@@ -262,9 +308,167 @@ def evaluate_github_answers(repo_summary: str, question_bank: list):
     return response_json
 
 
+def generate_github_combined_diff_session_feedback(repo_summary: str, session_data: dict):
+
+    prompt = """
+You are a senior technical interview evaluator.
+
+You will receive:
+1) Repository Summary
+2) Multiple completed interview sessions.
+
+Sessions are provided as a dictionary in this format:
+
+{
+    "session_1": {
+        "Question text 1": "Answer text 1",
+        "Question text 2": "Answer text 2"
+    },
+    "session_2": {
+        ...
+    }
+}
+
+Interpretation Rules:
+
+- session_1 is the most recent session.
+- Higher session numbers represent older sessions.
+- Each key inside a session is a question and its value is the candidate's answer.
+
+Instructions:
+- Evaluate overall technical progression.
+- Identify architectural understanding growth.
+- Identify improvement patterns.
+- Identify repeated weaknesses.
+- Identify consistent strengths.
+- Evaluate depth growth across sessions.
+- Evaluate system design maturity progression.
+- Compare recent sessions with older ones.
+- Be strict, analytical, and professional.
+- Provide structured feedback (strengths, weaknesses, progression, recommendations).
+- Do NOT mention JSON or formatting.
+
+Return strictly valid JSON:
+{
+  "feedback": "detailed combined feedback"
+}
+"""
+
+    content = f"""
+Repository Summary:
+{repo_summary}
+
+Session wise Question & Answers:
+{json.dumps(session_data, indent=2)}
+"""
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "github_combined_feedback_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "feedback": {"type": "string"}
+                },
+                "required": ["feedback"]
+            }
+        }
+    }
+
+    response = call_chatgpt(prompt, content, 0.2, response_format)
+
+    try:
+        content = response.choices[0].message.content
+        result = json.loads(content)
+        return result["feedback"]
+    except:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )
 
 
 
+def generate_github_combined_same_session_feedback(repo_summary: str, session_data: dict):
+
+    prompt = """
+You are a senior technical interview evaluator.
+
+You will receive:
+1) Repository Summary
+2) Multiple reattempts of the SAME interview session.
+
+Sessions are provided as a dictionary in this format:
+
+{
+    "session_1": {
+        "Question text 1": "Answer text 1",
+        "Question text 2": "Answer text 2"
+    },
+    "session_2": {
+        ...
+    }
+}
+
+Interpretation Rules:
+
+- session_1 is the most recent attempt.
+- Higher session numbers represent older attempts.
+- Each key inside a session is a question and its value is the candidate's answer.
+- All sessions correspond to the same interview round repeated over time.
+
+Instructions:
+- Evaluate progression across attempts.
+- Identify architectural depth improvement.
+- Identify areas of improvement.
+- Identify areas where mistakes persist.
+- Evaluate correction of past weaknesses.
+- Evaluate depth growth and system design maturity progression.
+- Compare latest attempt with older attempts.
+- Be strict, analytical, and professional.
+- Provide structured feedback (improvement, weaknesses, strengths, recommendations).
+- Do NOT mention JSON or formatting.
+
+Return strictly valid JSON:
+{
+  "feedback": "detailed combined feedback"
+}
+"""
+
+    content = f"""
+Repository Summary:
+{repo_summary}
+
+Session wise Question & Answers:
+{json.dumps(session_data, indent=2)}
+"""
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "github_combined_feedback_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "feedback": {"type": "string"}
+                },
+                "required": ["feedback"]
+            }
+        }
+    }
+
+    response = call_chatgpt(prompt, content, 0.2, response_format)
+
+    try:
+        content = response.choices[0].message.content
+        result = json.loads(content)
+        return result["feedback"]
+    except:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )
 
 
 

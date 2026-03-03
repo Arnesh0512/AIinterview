@@ -96,3 +96,171 @@ def evaluate_coding_answers(questions: list):
         )
 
     return response_json
+
+
+def generate_coding_combined_diff_session_feedback(session_data: dict):
+
+    prompt = """
+You are a senior coding interview evaluator.
+
+You will receive multiple completed coding interview sessions.
+
+Sessions are provided as a dictionary in this format:
+
+{
+    "session_1": {
+        "Problem Description": "Language: X\nAnswer:\nCode"
+    },
+    "session_2": {
+        ...
+    }
+}
+
+Interpretation Rules:
+
+- session_1 is the most recent session.
+- Higher session numbers represent older sessions.
+- Each key inside a session is the full problem description.
+- The value contains the language used and the candidate's full answer.
+
+Instructions:
+
+- Evaluate overall coding progression across sessions.
+- Analyze problem-solving approach maturity.
+- Evaluate improvement in:
+    * Algorithmic thinking
+    * Code structure
+    * Edge case handling
+    * Optimization
+    * Clarity and readability
+- Identify repeated logical mistakes.
+- Identify improvement in time/space complexity reasoning.
+- Compare recent sessions with older sessions.
+- Be strict and analytical.
+- Provide structured feedback including:
+    * Strengths
+    * Weaknesses
+    * Progression analysis
+    * Recommendations for improvement
+- Do NOT mention JSON or formatting.
+
+Return strictly valid JSON:
+{
+  "feedback": "detailed combined feedback"
+}
+"""
+
+    content = f"""
+Session wise Coding Attempts:
+{json.dumps(session_data, indent=2)}
+"""
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "coding_combined_feedback_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "feedback": {"type": "string"}
+                },
+                "required": ["feedback"]
+            }
+        }
+    }
+
+    response = call_chatgpt(prompt, content, 0.2, response_format)
+
+    try:
+        content = response.choices[0].message.content
+        result = json.loads(content)
+        return result["feedback"]
+    except:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )
+    
+
+def generate_coding_combined_same_session_feedback(session_data: dict):
+
+    prompt = """
+You are a senior coding interview evaluator.
+
+You will receive multiple reattempts of the SAME coding interview session.
+
+Sessions are provided as a dictionary in this format:
+
+{
+    "session_1": {
+        "Problem Description": "Language: X\nAnswer:\nCode"
+    },
+    "session_2": {
+        ...
+    }
+}
+
+Interpretation Rules:
+
+- session_1 is the most recent attempt.
+- Higher session numbers represent older attempts.
+- All sessions correspond to the SAME set of problems.
+- Only answers and approaches may differ.
+
+Instructions:
+
+- Evaluate improvement across attempts.
+- Analyze correction of previous mistakes.
+- Evaluate improvement in:
+    * Algorithm choice
+    * Code efficiency
+    * Edge case handling
+    * Code readability
+    * Use of appropriate data structures
+- Identify persistent mistakes.
+- Compare latest attempt with older attempts clearly.
+- Evaluate whether complexity improved.
+- Be strict and analytical.
+- Provide structured feedback including:
+    * Improvements observed
+    * Remaining weaknesses
+    * Technical maturity growth
+    * Recommendations
+- Do NOT mention JSON or formatting.
+
+Return strictly valid JSON:
+{
+  "feedback": "detailed combined feedback"
+}
+"""
+
+    content = f"""
+Session wise Coding Attempts:
+{json.dumps(session_data, indent=2)}
+"""
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "coding_combined_feedback_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "feedback": {"type": "string"}
+                },
+                "required": ["feedback"]
+            }
+        }
+    }
+
+    response = call_chatgpt(prompt, content, 0.2, response_format)
+
+    try:
+        content = response.choices[0].message.content
+        result = json.loads(content)
+        return result["feedback"]
+    except:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )

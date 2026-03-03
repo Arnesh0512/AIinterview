@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from model import call_chatgpt
 
 
-def generate_cs_topic_questions(topics: List[str], num_questions: int):
+def generate_concept_topic_questions(topics: List[str], num_questions: int):
 
     prompt = f"""
     You are a senior computer science technical interviewer.
@@ -77,7 +77,7 @@ def generate_cs_topic_questions(topics: List[str], num_questions: int):
 
 
 
-def evaluate_cs_topic_answers(
+def evaluate_concept_topic_answers(
     topics: List[str],
     question_bank: List[dict]
 ):
@@ -189,7 +189,180 @@ def evaluate_cs_topic_answers(
     return response_json
 
 
+def generate_concept_combined_diff_session_feedback(
+    topics: list,
+    session_data: dict
+):
 
+    prompt = """
+You are a senior technical interview evaluator.
+
+You will receive:
+1) Selected conceptual topics
+2) Multiple completed conceptual interview sessions.
+
+Sessions are provided as a dictionary in this format:
+
+{
+    "session_1": {
+        "Question text": "Answer text"
+    },
+    "session_2": {
+        ...
+    }
+}
+
+Interpretation Rules:
+
+- session_1 is the most recent session.
+- Higher session numbers represent older sessions.
+- Each key inside a session is a question and its value is the candidate's answer.
+- Sessions may contain different questions across rounds.
+
+Instructions:
+
+- Evaluate overall conceptual progression across sessions.
+- Identify depth improvement in theoretical understanding.
+- Identify repeated conceptual weaknesses.
+- Identify consistent strengths.
+- Evaluate clarity of explanation and correctness.
+- Evaluate ability to connect concepts across topics.
+- Compare recent sessions with older sessions.
+- Be strict, analytical, and professional.
+- Provide structured feedback including:
+    * Strengths
+    * Weaknesses
+    * Progression analysis
+    * Recommendations
+- Do NOT mention JSON or formatting.
+
+Return strictly valid JSON:
+{
+  "feedback": "detailed combined feedback"
+}
+"""
+
+    content = f"""
+Selected Topics:
+{topics}
+
+Session wise Question & Answers:
+{json.dumps(session_data)}
+"""
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "concept_combined_feedback_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "feedback": {"type": "string"}
+                },
+                "required": ["feedback"]
+            }
+        }
+    }
+
+    response = call_chatgpt(prompt, content, 0.2, response_format)
+
+    try:
+        content = response.choices[0].message.content
+        result = json.loads(content)
+        return result["feedback"]
+    except:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )
+    
+
+
+def generate_concept_combined_same_session_feedback(
+    topics: list,
+    session_data: dict
+):
+
+    prompt = """
+You are a senior technical interview evaluator.
+
+You will receive:
+1) Selected conceptual topics
+2) Multiple reattempts of the SAME conceptual interview session.
+
+Sessions are provided as a dictionary in this format:
+
+{
+    "session_1": {
+        "Question text": "Answer text"
+    },
+    "session_2": {
+        ...
+    }
+}
+
+Interpretation Rules:
+
+- session_1 is the most recent attempt.
+- Higher session numbers represent older attempts.
+- All sessions correspond to the SAME question set.
+- Only answers differ between attempts.
+
+Instructions:
+
+- Evaluate conceptual improvement across attempts.
+- Identify corrections of previous misunderstandings.
+- Identify persistent conceptual errors.
+- Evaluate improvement in explanation clarity and structure.
+- Evaluate depth growth in theoretical reasoning.
+- Compare the latest attempt clearly with older attempts.
+- Be strict, analytical, and professional.
+- Provide structured feedback including:
+    * Improvements observed
+    * Remaining weaknesses
+    * Conceptual maturity growth
+    * Recommendations
+- Do NOT mention JSON or formatting.
+
+Return strictly valid JSON:
+{
+  "feedback": "detailed combined feedback"
+}
+"""
+
+    content = f"""
+Selected Topics:
+{topics}
+
+Session wise Question & Answers:
+{json.dumps(session_data)}
+"""
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "concept_combined_feedback_output",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "feedback": {"type": "string"}
+                },
+                "required": ["feedback"]
+            }
+        }
+    }
+
+    response = call_chatgpt(prompt, content, 0.2, response_format)
+
+    try:
+        content = response.choices[0].message.content
+        result = json.loads(content)
+        return result["feedback"]
+    except:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )
 
 
 

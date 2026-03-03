@@ -4,13 +4,13 @@ from tempfile import NamedTemporaryFile
 import shutil
 import os
 from database import resume_collection, resume_question_collection, resume_fs, candidate_collection
-from prompt.resume import process_resume, generate_resume_question, evaluate_resume_answers, generate_combined_diff_session_feedback, generate_combined_same_session_feedback
+from prompt.resume import process_resume, generate_resume_question, evaluate_resume_answers, generate_resume_combined_diff_session_feedback, generate_resume_combined_same_session_feedback
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
 from verify.resume import verify_resume, verify_question_session, verify_session_status, verify_session_time, verify_question_number, verify_session_status2, verify_file_id
 from fastapi.responses import StreamingResponse
 from datetime import datetime, timedelta, timezone
-from utils.resume import previous_session_questions
+from utils.resume import previous_resume_session_questions
 from utils.time import generate_timestamp
 
 router = APIRouter(
@@ -45,7 +45,7 @@ async def upload_resume(
         summary = process_resume(temp_path, ocr_mode)
     
         with open(temp_path, "rb") as f:
-            resume_id = resume_fs.put(
+            file_id = resume_fs.put(
                 f,
                 filename=original_filename,
                 content_type="application/pdf"
@@ -55,14 +55,13 @@ async def upload_resume(
             "candidate_id": candidate_id,
             "resume_number": candidate["total_resumes"]+1,
             "summary": summary,
-            "file_id": resume_id,
+            "file_id": file_id,
             "filename": original_filename,
             "created_on": generate_timestamp(),
             "total_sessions":0
         }
 
-        resume_insert_result = resume_collection.insert_one(resume_doc)
-        resume_id = resume_insert_result.inserted_id
+        result = resume_collection.insert_one(resume_doc)
 
         candidate_collection.update_one(
             {"_id": candidate_id},
@@ -71,7 +70,7 @@ async def upload_resume(
                     "total_resumes": 1
                 }
             }
-    )
+        )
 
     finally:
         os.remove(temp_path)
@@ -150,19 +149,23 @@ def generate_questions(
     token = credentials.credentials
     payload = verify_access_token(token)
     candidate, candidate_id, email = verify_candidate_payload(payload)
-    resume, resume_id = verify_resume(resume_id, candidate_id)
-
-    session_number = resume["total_sessions"] + 1   
+    
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_number = resume_doc["total_sessions"] + 1   
 
     
-    previous_sessions = []
+    previous_sessions = {}
     if session_number != 1:
-        previous_sessions = previous_session_questions(resume_id)
+        previous_sessions,_ = previous_resume_session_questions(resume_obj_id)
 
 
 
     try:
-        questions_json = generate_resume_question(resume["summary"], num_questions, previous_sessions)
+        questions_json = generate_resume_question(
+            resume_doc["summary"],
+            num_questions,
+            previous_sessions
+        )
         questions_list = questions_json["questions"]
 
     except Exception as e:
@@ -185,7 +188,7 @@ def generate_questions(
     timestamp = generate_timestamp()
     session_doc = {
         "session_number": session_number,
-        "resume_id": resume_id,
+        "resume_id": resume_obj_id,
         "time": time,
         "question_bank": question_bank,
         "overall_feedback": "",
@@ -198,7 +201,7 @@ def generate_questions(
     question_session_id = inserted.inserted_id
 
     resume_collection.update_one(
-        {"_id": resume_id},
+        {"_id": resume_obj_id},
         {
             "$set": {
                 f"question_session_ids.{str(question_session_id)}": timestamp
@@ -216,7 +219,7 @@ def generate_questions(
     
 
     return {
-        "resume_id": str(resume_id),
+        "resume_id": str(resume_obj_id),
         "question_session_id": str(question_session_id),
         "time": time,
         "questions": formatted_questions
@@ -328,7 +331,7 @@ def submit_session(
     return {"success": True}
 
 
-@router.post("/questions/autosubmit")
+@router.patch("/questions/autosubmit")
 def auto_submit_session(
     resume_id: str,
     question_session_id: str,
@@ -376,7 +379,7 @@ def auto_submit_session(
     }
 
 
-@router.post("/questions/reattempt")
+@router.put("/questions/reattempt")
 def reattempt_session(
     resume_id: str,
     question_session_id: str,
@@ -434,7 +437,7 @@ def reattempt_session(
     }
 
 
-@router.post("/questions/feedback")
+@router.get("/questions/feedback")
 def generate_feedback(
     resume_id: str,
     question_session_id: str,
@@ -629,7 +632,7 @@ def delete_session(
 
 
 
-@router.post("/questions/delete-reattempt")
+@router.put("/questions/delete-reattempt")
 def delete_and_reattempt(
     resume_id: str,
     question_session_id: str,
@@ -684,7 +687,7 @@ def delete_and_reattempt(
 
 
 
-@router.post("/questions/combined-feedback")
+@router.get("/questions/combined-feedback")
 def combined_feedback_last_x_sessions(
     resume_id: str,
     x: int,
@@ -700,52 +703,10 @@ def combined_feedback_last_x_sessions(
 
     resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
 
-
-    sessions = list(resume_question_collection.find(
-        {"resume_id": resume_obj_id},
-        {"session_number": 1, "question_bank": 1, "timestamp": 1, "_id":1}
-    ))
-
-    latest = {}
-
-    for s in sessions:
-        sn = s["session_number"]
-        if sn not in latest or s["timestamp"] > latest[sn]["timestamp"]:
-            latest[sn] = s
-
-    if len(latest) <= 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Need at least 2 sessions for combined feedback"
-        )
-
-    sorted_sessions = sorted(
-        latest.values(),
-        key=lambda x: x["session_number"],
-        reverse=True
-    )
-
-    selected_sessions = sorted_sessions[:x]
-
-    session_dict = {}
-    sessions_used = {}
-
-    for s in selected_sessions:
-        sn = s["session_number"]
-        sid = str(s["_id"])
-        ts = s["timestamp"]
-
-        session_dict[f"session_{sn}"] = [
-            {"question": q["question"], "answer": q["answer"]}
-            for q in s["question_bank"]
-        ]
-
-        sessions_used[str(ts)] = {
-            "session_number": sn,
-            "session_id": sid
-        }
-
-    feedback = generate_combined_diff_session_feedback(resume_doc["summary"], session_dict)
+    session_dict, sessions_used = previous_resume_session_questions(
+    resume_obj_id,x=x)
+    
+    feedback = generate_resume_combined_diff_session_feedback(resume_doc["summary"], session_dict)
 
     resume_collection.update_one(
         {"_id": resume_obj_id},
@@ -768,7 +729,7 @@ def combined_feedback_last_x_sessions(
 
 
 
-@router.post("/questions/session-progress-feedback")
+@router.get("/questions/session-progress-feedback")
 def combined_feedback_same_session(
     resume_id: str,
     question_session_id: str,
@@ -791,41 +752,12 @@ def combined_feedback_same_session(
 
     session_number = session_doc["session_number"]
 
-    attempts = list(resume_question_collection.find(
-        {
-            "resume_id": resume_obj_id,
-            "session_number": session_number
-        },
-        {"_id":1, "question_bank": 1, "timestamp": 1}
-    ).sort("timestamp", -1))
+    session_dict, sessions_used = previous_resume_session_questions(
+    resume_obj_id,
+    x=x,
+    session_number=session_number)
 
-    if len(attempts) <= 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Need at least 2 attempts for progress feedback"
-        )
-
-    selected = attempts[:x]
-
-    session_dict = {}
-    sessions_used = {}
-
-    for idx, s in enumerate(selected):
-        sid = str(s["_id"])
-        ts = s["timestamp"]
-
-        session_dict[f"session_{session_number}_{idx+1}"] = [
-            {"question": q["question"], "answer": q["answer"]}
-            for q in s["question_bank"]
-        ]
-
-        sessions_used[str(ts)] = {
-            "session_number": session_number,
-            "session_id": sid
-        }
-
-
-    feedback = generate_combined_same_session_feedback(resume_doc["summary"], session_dict)
+    feedback = generate_resume_combined_same_session_feedback(resume_doc["summary"], session_dict)
 
 
     resume_collection.update_one(

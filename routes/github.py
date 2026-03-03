@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timezone, timedelta
-from database import github_collection, github_question_collection
+from database import github_collection, github_question_collection, candidate_collection
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
-from utils.github import fetch_repositories
-from prompt.github import process_repo, generate_github_question, evaluate_github_answers
+from utils.github import fetch_repositories, previous_github_session_questions
+from prompt.github import process_repo, generate_github_question, evaluate_github_answers, generate_github_combined_diff_session_feedback, generate_github_combined_same_session_feedback
 from verify.github import verify_github_link, verify_github_link_repo, verify_github, verify_question_number, verify_question_session, verify_session_status, verify_session_status2, verify_session_time
 from utils.time import generate_timestamp
 
@@ -52,15 +52,25 @@ def get_repository_details(
 
     github_doc = {
         "candidate_id": candidate_id,
+        "github_number": candidate["total_githubs"]+1,
         "github_link": github_link,
         "repo_name": repo_details["repo_name"],
         "repo_link": repo_link,
         "summary": repo_details["summary"],
-        "created_on": generate_timestamp()
+        "created_on": generate_timestamp(),
+        "total_sessions":0
     }
 
-    github_insert_result = github_collection.insert_one(github_doc)
-    github_id = github_insert_result.inserted_id
+    result = github_collection.insert_one(github_doc)
+
+    candidate_collection.update_one(
+        {"_id": candidate_id},
+        {
+            "$inc": {
+                "total_githubs": 1
+            }
+        }
+    )
 
     return {
         "success": True
@@ -78,12 +88,14 @@ def get_all_github_ids(
 
     githubs = github_collection.find(
         {"candidate_id": candidate_id},
-        {"_id": 1, "repo_name": 1, "repo_link": 1, "created_on":1}
+        {"_id": 1,"github_number":1,"github_link":1, "repo_name": 1, "repo_link": 1, "created_on":1}
     ).sort("created_on", -1)
 
     github_list = [
         {
             "github_id": str(doc["_id"]),
+            "github_number": doc.get("github_number"),
+            "github_link": doc.get("github_link"),
             "repo_name": doc.get("repo_name"),
             "repo_link": doc.get("repo_link"),
             "created_on": doc.get("created_on")
@@ -120,11 +132,19 @@ def generate_github_questions(
     candidate, candidate_id, email = verify_candidate_payload(payload)
 
     github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_number = github_doc["total_sessions"] + 1   
+
+    previous_sessions = {}
+    if session_number != 1:
+        previous_sessions,_ = previous_github_session_questions(github_obj_id)
+
+
 
     try:
         questions_json = generate_github_question(
             github_doc["summary"],
-            num_questions
+            num_questions,
+            previous_sessions
         )
         questions_list = questions_json["questions"]
 
@@ -144,13 +164,6 @@ def generate_github_questions(
             "score": ""
         })
 
-
-    nlist = github_question_collection.find(
-        {"github_id": github_obj_id},
-        {"session_number": 1, "_id": 0}
-    )
-    nlist = [doc["session_number"] for doc in nlist]
-    session_number = max(list(set(nlist))) + 1 if nlist else 1
 
     timestamp = generate_timestamp()
     session_doc = {
@@ -173,6 +186,9 @@ def generate_github_questions(
         {
             "$set": {
                 f"question_session_ids.{str(question_session_id)}":timestamp
+            },
+            "$inc": {
+                "total_sessions": 1
             }
         }
     )
@@ -226,15 +242,6 @@ def save_answer(
     )
 
     return {"success": True}
-
-
-
-
-
-
-
-
-
 
 
 @router.post("/questions/submit")
@@ -297,9 +304,7 @@ def submit_session(
     return {"success": True}
 
 
-
-
-@router.post("/questions/autosubmit")
+@router.patch("/questions/autosubmit")
 def auto_submit_session(
     github_id: str,
     question_session_id: str,
@@ -347,19 +352,7 @@ def auto_submit_session(
     }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-@router.post("/questions/reattempt")
+@router.put("/questions/reattempt")
 def reattempt_session(
     github_id: str,
     question_session_id: str,
@@ -417,8 +410,7 @@ def reattempt_session(
     }
 
 
-
-@router.post("/questions/feedback")
+@router.get("/questions/feedback")
 def generate_feedback(
     github_id: str,
     question_session_id: str,
@@ -484,8 +476,6 @@ def generate_feedback(
     }
 
 
-
-
 @router.get("/questions/sessions")
 def get_all_sessions(
     github_id: str,
@@ -522,8 +512,8 @@ def get_all_sessions(
     }
 
 
-@router.get("/questions/history")
-def get_session_history(
+@router.get("/questions/data")
+def get_session_data(
     github_id: str,
     question_session_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -545,4 +535,221 @@ def get_session_history(
         "github_id": str(github_obj_id),
         "session": session_doc
     }
+
+
+
+
+@router.delete("/delete")
+def delete_github(
+    github_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+
+    github_question_collection.delete_many({
+        "github_id": github_obj_id
+    })
+
+    github_collection.delete_one({
+        "_id": github_obj_id
+    })
+
+    return {"success": True}
+
+
+@router.delete("/questions/delete")
+def delete_session(
+    github_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    count_same_number = github_question_collection.count_documents({
+        "github_id": github_obj_id,
+        "session_number": session_number
+    })
+
+    if count_same_number == 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Can't delete complete session entirely, either reattempt or leave."
+        )
+
+    github_question_collection.delete_one({
+        "_id": session_obj_id
+    })
+
+    return {"success": True}
+
+
+
+
+@router.put("/questions/delete-reattempt")
+def delete_and_reattempt(
+    github_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+
+
+    new_question_bank = []
+
+    for q in session_doc["question_bank"]:
+        new_question_bank.append({
+            "question_number": q["question_number"],
+            "question": q["question"],
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+    timestamp = generate_timestamp()
+
+    github_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "question_bank": new_question_bank,
+                "overall_feedback": "",
+                "overall_score": "",
+                "status": "active",
+                "timestamp": timestamp
+            },
+            "$unset": {
+                "submitted_at_frontend": "",
+                "submitted_at_backend": ""
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
+@router.get("/questions/combined-feedback")
+def combined_feedback_last_x_sessions(
+    github_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+
+    session_dict, sessions_used = previous_github_session_questions(
+    github_obj_id,x=x)
+    
+    feedback = generate_github_combined_diff_session_feedback(github_doc["summary"], session_dict)
+
+    github_collection.update_one(
+        {"_id": github_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type": "different",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+@router.get("/questions/session-progress-feedback")
+def combined_feedback_same_session(
+    github_id: str,
+    question_session_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        github_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    session_dict, sessions_used = previous_github_session_questions(
+    github_obj_id,
+    x=x,
+    session_number=session_number)
+
+    feedback = generate_github_combined_same_session_feedback(github_doc["summary"], session_dict)
+
+
+    github_collection.update_one(
+        {"_id": github_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type":"same",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+
+
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends,HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timezone, timedelta
-from database import leetcode, coding_collection, coding_question_collection
+from database import leetcode, coding_collection, coding_question_collection, candidate_collection
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
 from constants.company import CompanyEnum
@@ -10,7 +10,8 @@ from constants.difficulty import DifficultyEnum
 from constants.language import LanguageEnum
 from typing import Optional, List
 from verify.coding import verify_coding, verify_quantity, verify_question_session, verify_session_status, verify_session_time, verify_question_id, verify_session_status2
-from prompt.coding import evaluate_coding_answers
+from prompt.coding import evaluate_coding_answers, generate_coding_combined_diff_session_feedback, generate_coding_combined_same_session_feedback
+from utils.coding import get_used_coding_question_ids ,previous_coding_session_questions
 from utils.time import generate_timestamp
 
 router = APIRouter(prefix="/leetcode", tags=["Coding"])
@@ -50,14 +51,25 @@ def start_coding(
 
     coding_doc = {
     "candidate_id": candidate_id,
+    "coding_number": candidate["total_codings"]+1,
     "company": [c.value for c in company] if company else [],
     "difficulty": [d.value for d in difficulty] if difficulty else [],
     "tag": [t.value for t in tag] if tag else [],
     "available_ques": available_ques,
-    "created_on": generate_timestamp()
+    "created_on": generate_timestamp(),
+    "total_sessions":0
     }
     
     result = coding_collection.insert_one(coding_doc)
+
+    candidate_collection.update_one(
+        {"_id": candidate_id},
+        {
+            "$inc": {
+                "total_codings": 1
+            }
+        }
+    )
 
     return {
         "success": True
@@ -84,6 +96,7 @@ def get_all_coding_ids(
     for doc in codings:
         coding_list.append({
             "coding_id": str(doc["_id"]),
+            "coding_number": doc.get("coding_number"),
             "company": doc.get("company", []),
             "difficulty": doc.get("difficulty", []),
             "tag": doc.get("tag", []),
@@ -126,6 +139,12 @@ def generate_questions(
         query["difficulty"] = {"$in": coding["difficulty"]}
 
 
+    session_number = coding["total_sessions"] + 1       
+
+    if session_number > 1:
+        query["question_id"] = {"$nin": get_used_coding_question_ids(coding_id)}
+
+
     pipeline = [
         {"$match": query},
         {"$sample": {"size": num_questions}}
@@ -133,9 +152,17 @@ def generate_questions(
 
     questions_cursor = leetcode.aggregate(pipeline)
     questions_list = list(questions_cursor)
+    available_count = len(questions_list)
+
+
+    if available_count == 0:
+        return {
+           "success":False,
+           "message":"No questions available"
+        }
 
     question_bank = []
-    time = num_questions * 60
+    time = available_count * 60
 
     for q in questions_list:
         question_bank.append({
@@ -146,12 +173,6 @@ def generate_questions(
             "score": ""
         })
 
-    nlist = coding_question_collection.find(
-        {"coding_id": coding_id},
-        {"session_number": 1, "_id": 0}
-    )
-    nlist = [doc["session_number"] for doc in nlist]
-    session_number = max(nlist) + 1 if nlist else 1
 
     timestamp = generate_timestamp()
     session_doc = {
@@ -174,6 +195,9 @@ def generate_questions(
         {
             "$set": {
                 f"question_session_ids.{str(question_session_id)}": timestamp
+            },
+            "$inc": {
+                "total_sessions": 1
             }
         }
     )
@@ -188,6 +212,7 @@ def generate_questions(
     ]
 
     return {
+        "success":True,
         "coding_id": str(coding_id),
         "question_session_id": str(question_session_id),
         "time": time,
@@ -317,7 +342,7 @@ def submit_session(
 
 
 
-@router.post("/questions/autosubmit")
+@router.patch("/questions/autosubmit")
 def auto_submit_session(
     coding_id: str,
     question_session_id: str,
@@ -368,7 +393,7 @@ def auto_submit_session(
 
 
 
-@router.post("/questions/reattempt")
+@router.put("/questions/reattempt")
 def reattempt_session(
     coding_id: str,
     question_session_id: str,
@@ -427,7 +452,7 @@ def reattempt_session(
 
 
 
-@router.post("/questions/feedback")
+@router.get("/questions/feedback")
 def generate_feedback(
     coding_id: str,
     question_session_id: str,
@@ -552,8 +577,8 @@ def get_all_sessions(
 
 
 
-@router.get("/questions/history")
-def get_session_history(
+@router.get("/questions/data")
+def get_session_data(
     coding_id: str,
     question_session_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -575,6 +600,223 @@ def get_session_history(
         "coding_id": str(coding_obj_id),
         "session": session_doc
     }
+
+
+
+
+
+@router.delete("/delete")
+def delete_coding(
+    coding_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+
+    coding_question_collection.delete_many({
+        "coding_id": coding_obj_id
+    })
+
+    coding_collection.delete_one({
+        "_id": coding_obj_id
+    })
+
+    return {"success": True}
+
+
+@router.delete("/questions/delete")
+def delete_session(
+    coding_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    count_same_number = coding_question_collection.count_documents({
+        "coding_id": coding_obj_id,
+        "session_number": session_number
+    })
+
+    if count_same_number == 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Can't delete complete session entirely, either reattempt or leave."
+        )
+
+    coding_question_collection.delete_one({
+        "_id": session_obj_id
+    })
+
+    return {"success": True}
+
+
+
+
+@router.put("/questions/delete-reattempt")
+def delete_and_reattempt(
+    coding_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+
+    new_question_bank = []
+
+    for q in session_doc["question_bank"]:
+        new_question_bank.append({
+            "question_id": q["question_id"],
+            "language": "",
+            "answer": "",
+            "feedback": "",
+            "score": ""
+        })
+
+    timestamp = generate_timestamp()
+
+    coding_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "question_bank": new_question_bank,
+                "overall_feedback": "",
+                "overall_score": "",
+                "status": "active",
+                "timestamp": timestamp
+            },
+            "$unset": {
+                "submitted_at_frontend": "",
+                "submitted_at_backend": ""
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
+@router.get("/questions/combined-feedback")
+def combined_feedback_last_x_sessions(
+    coding_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+
+    session_dict, sessions_used = previous_coding_session_questions(
+    coding_obj_id,x=x)
+    
+    feedback = generate_coding_combined_diff_session_feedback(session_dict)
+
+    coding_collection.update_one(
+        {"_id": coding_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type": "different",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+@router.get("/questions/session-progress-feedback")
+def combined_feedback_same_session(
+    coding_id: str,
+    question_session_id: str,
+    x: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    if x <= 1:
+        raise HTTPException(status_code=400, detail="Invalid value of x")
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    coding_doc, coding_obj_id = verify_coding(coding_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        coding_obj_id
+    )
+
+    session_number = session_doc["session_number"]
+
+    session_dict, sessions_used = previous_coding_session_questions(
+    coding_obj_id,
+    x=x,
+    session_number=session_number)
+
+    feedback = generate_coding_combined_same_session_feedback(session_dict)
+
+
+    coding_collection.update_one(
+        {"_id": coding_obj_id},
+        {
+            "$push": {
+                "combined_feedback": {
+                    "sessions_used": sessions_used,
+                    "feedback": feedback,
+                    "type":"same",
+                    "timestamp": generate_timestamp()
+                }
+            }
+        }
+    )
+
+    return {
+        "sessions_used": sessions_used,
+        "feedback": feedback
+    }
+
+
+
+
 
 
 
