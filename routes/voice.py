@@ -20,19 +20,9 @@ security = HTTPBearer()
 client = OpenAI(api_key=OPENAP_API_KEY)
 
 
-# -----------------------------
-# Load models once
-# -----------------------------
 
-print("Loading Whisper models...")
-whisper_base = whisper.load_model("base")
-whisper_small = whisper.load_model("small")
 
-print("Loading Faster-Whisper models...")
-fw_base = WhisperModel("base", device="cpu")
-fw_small = WhisperModel("small", device="cpu")
 
-print("All speech models loaded.")
 
 
 # -----------------------------
@@ -296,6 +286,15 @@ async def submit_audio_answer(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
 
+    print("Loading Whisper models...")
+    whisper_base = whisper.load_model("base")
+    whisper_small = whisper.load_model("small")
+
+    print("Loading Faster-Whisper models...")
+    fw_base = WhisperModel("base", device="cpu")
+    fw_small = WhisperModel("small", device="cpu")
+
+    print("All speech models loaded.")
     temp_audio_path = None
 
     try:

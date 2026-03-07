@@ -23,17 +23,7 @@ client = OpenAI(api_key=OPENAP_API_KEY)
 
 process = psutil.Process(os.getpid())
 
-# -----------------------------
-# Load models once
-# -----------------------------
 
-print("Loading Whisper models...")
-whisper_base = whisper.load_model("base")
-whisper_small = whisper.load_model("small")
-
-print("Loading Faster-Whisper models...")
-fw_base = WhisperModel("base", device="cpu")
-fw_small = WhisperModel("small", device="cpu")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -189,6 +179,18 @@ async def submit_audio_answer(
     audio: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+
+
+    print("Loading Whisper models...")
+    whisper_base = whisper.load_model("base")
+    whisper_small = whisper.load_model("small")
+
+    print("Loading Faster-Whisper models...")
+    fw_base = WhisperModel("base", device="cpu")
+    fw_small = WhisperModel("small", device="cpu")
+
+    print("All speech models loaded.")
+
 
     temp_audio_path = None
     wav_path = None

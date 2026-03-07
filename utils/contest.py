@@ -5,7 +5,7 @@ from utils.time import generate_timestamp
 import inspect
 from typing import Callable, Awaitable, Union
 from database import contest_candidate_collection, leetcode, contest_collection
-from prompt.contest import evaluate_coding_scores, evaluate_concept_score, evaluate_hr_score
+from prompt.contest import evaluate_coding_score, evaluate_concept_score, evaluate_hr_score
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -81,11 +81,19 @@ def generate_coding_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, con
             "language": q.get("language") or ""
         })
 
-    scores = evaluate_coding_scores(evaluation_input)
+    response = evaluate_coding_score(evaluation_input)
+
+    results = response["results"]
+    overall_feedback = response["overall_feedback"]
 
     score_map = {
         ObjectId(s["question_id"]): s["score"]
-        for s in scores
+        for s in results
+    }
+
+    feedback_map = {
+        ObjectId(f["question_id"]): f["feedback"]
+        for f in results
     }
 
     new_question_bank = []
@@ -99,6 +107,7 @@ def generate_coding_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, con
             "language": q.get("language"),
             "answer": q.get("answer"),
             "timestamp": q.get("timestamp"),
+            "feedback": feedback_map.get(qid, ""),
             "score": score_map.get(qid, 0)
         })
 
@@ -109,7 +118,8 @@ def generate_coding_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, con
         },
         {
             "$set": {
-                "coding.question_bank": new_question_bank
+                "coding.question_bank": new_question_bank,
+                "coding.overall_feedback": overall_feedback
             }
         }
     )
@@ -145,11 +155,18 @@ def generate_concept_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, co
             "answer": q.get("answer") or "",
         })
 
-    scores = evaluate_concept_score(evaluation_input)
+    response = evaluate_concept_score(evaluation_input)
+
+    results = response["results"]
+    overall_feedback = response["overall_feedback"]
 
     score_map = {
         s["question_id"]: s["score"]
-        for s in scores
+        for s in results
+    }
+    feedback_map = {
+        f["question_id"]: f["feedback"]
+        for f in results
     }
 
     new_question_bank = []
@@ -162,6 +179,7 @@ def generate_concept_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, co
             "question_id": qid,
             "answer": q.get("answer"),
             "timestamp": q.get("timestamp"),
+            "feedback": feedback_map.get(qid, ""),
             "score": score_map.get(qid, 0)
         })
 
@@ -172,7 +190,8 @@ def generate_concept_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, co
         },
         {
             "$set": {
-                "concept.question_bank": new_question_bank
+                "concept.question_bank": new_question_bank,
+                "concept.overall_feedback": overall_feedback
             }
         }
     )
@@ -203,11 +222,18 @@ def generate_hr_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, contest
 
     summary = contest_candidate["resume"]["summary"]
 
-    scores = evaluate_hr_score(summary, evaluation_input)
+    response = evaluate_hr_score(evaluation_input, summary)
+
+    results = response["results"]
+    overall_feedback = response["overall_feedback"]
 
     score_map = {
         s["question_id"]: s["score"]
-        for s in scores
+        for s in results
+    }
+    feedback_map = {
+        f["question_id"]: f["feedback"]
+        for f in results
     }
 
     new_question_bank = []
@@ -221,6 +247,7 @@ def generate_hr_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, contest
             "audio_id": q.get("audio_id"),
             "transcript": q.get("transcript"),
             "timestamp": q.get("timestamp"),
+            "feedback": feedback_map.get(qid, ""),
             "score": score_map.get(qid, 0)
         })
 
@@ -231,7 +258,8 @@ def generate_hr_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, contest
         },
         {
             "$set": {
-                "hr.question_bank": new_question_bank
+                "hr.question_bank": new_question_bank,
+                "hr.overall_feedback": overall_feedback
             }
         }
     )

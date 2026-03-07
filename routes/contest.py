@@ -225,7 +225,10 @@ async def submit_resume_for_contest(
     verify_resume_time_open(timestamp, contest)
 
     if contest_candidate.get("resume"):
-        raise HTTPException("Resume already submitted")
+        raise HTTPException(
+            status_code=400,
+            detail="Resume already submitted"
+        )
 
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF allowed")
@@ -251,9 +254,13 @@ async def submit_resume_for_contest(
 
         questions = contest["resume_round"]["questions"]
 
-        question_bank = evaluate_resume_score(
+        response = evaluate_resume_score(
             resume_text, questions, 
             contest["company"], contest["role"], contest["skills"])
+        
+        question_bank = response["results"]
+        overall_feedback = response["overall_feedback"]
+        
         summary = generate_summary(resume_text)
 
         with open(temp_path, "rb") as f:
@@ -284,6 +291,7 @@ async def submit_resume_for_contest(
                     "file_id": file_id,
                     "summary": summary,
                     "question_bank":question_bank,
+                    "overall_feedback":overall_feedback,
                     "submitted_at": timestamp
                 }
             }

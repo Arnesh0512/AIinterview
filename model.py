@@ -5,10 +5,6 @@ from faster_whisper import WhisperModel
 
 
 CHATGPT = OpenAI(api_key=OPENAP_API_KEY)
-whisper_base = whisper.load_model("base")
-whisper_small = whisper.load_model("small")
-fw_base = WhisperModel("base", device="cpu")
-fw_small = WhisperModel("small", device="cpu")
 
 def call_chatgpt(prompt: str, content: str, temperature: float, reponse_format: dict):
 
@@ -47,7 +43,7 @@ def call_audio_model(wav_path):
 
 
 def call_audio_model(wav_path):
-
+    whisper_base = whisper.load_model("base")
     result = whisper_base.transcribe(
         wav_path,
         fp16=False,
@@ -76,7 +72,7 @@ def call_audio_model(wav_path):
 
 
 def call_audio_model(wav_path):
-
+    whisper_small = whisper.load_model("small")
     result = whisper_small.transcribe(
         wav_path,
         fp16=False,
@@ -105,7 +101,7 @@ def call_audio_model(wav_path):
 
 
 def call_audio_model(wav_path):
-
+    fw_base = WhisperModel("base", device="cpu")
     segments, _ = fw_base.transcribe(
         wav_path,
         beam_size=5,
@@ -138,7 +134,7 @@ def call_audio_model(wav_path):
 
 
 def call_audio_model(wav_path):
-
+    fw_small = WhisperModel("small", device="cpu")
     segments, _ = fw_small.transcribe(
         wav_path,
         beam_size=5,

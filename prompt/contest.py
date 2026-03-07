@@ -6,7 +6,8 @@ from fastapi import HTTPException
 def generate_summary(resume_text):
 
 
-    prompt = f""" You are a professional technical resume analyzer. Analyze the resume and:
+    prompt = f""" 
+    You are a professional technical resume analyzer. Analyze the resume and:
       - Identify technical skills and tools
       - Summarize key projects and impact
       - Infer strengths and experience level
@@ -98,13 +99,26 @@ Scoring rules:
 - 10 = strong clear evidence
 - Base scores only on resume content
 - Do NOT assume missing information
+- Provide actionable feedback
 
-Return strictly valid JSON:
+Also provide:
+- Overall feedback
+
+IMPORTANT:
+- Do not hallucinate missing answers
+- Evaluate only based on given response
+- Return strictly valid JSON
 
 {
-  "results":[
-     {"question_id":"string","score":number}
-  ]
+  "results":
+    [
+        {
+        "question_id":"string",
+        "feedback": "string",
+        "score":number
+        }, ....
+    ],
+    "overall_feedback": "string"
 }
 """
 
@@ -133,13 +147,22 @@ Skills: {", ".join(skills)}
                             "type": "object",
                             "properties": {
                                 "question_id": {"type": "string"},
+                                "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
-                            "required": ["question_id", "score"]
+                            "required": [
+                                "question_id",
+                                "feedback",
+                                "score"
+                            ]
                         }
-                    }
+                    },
+                    "overall_feedback": {"type": "string"}
                 },
-                "required": ["results"]
+                "required": [
+                    "results",
+                    "overall_feedback"
+                ]
             }
         }
     }
@@ -148,8 +171,8 @@ Skills: {", ".join(skills)}
 
     try:
         response_content = response.choices[0].message.content
-        result = json.loads(response_content)
-        return result["results"]
+        response_json = json.loads(response_content)
+        return response_json
 
     except Exception:
 
@@ -160,7 +183,7 @@ Skills: {", ".join(skills)}
 
 
 
-def evaluate_coding_scores(evaluation_input):
+def evaluate_coding_score(evaluation_input):
 
     prompt = """
 You are a senior coding interviewer.
@@ -174,15 +197,26 @@ Scoring rules:
 Score each question from 0 to 10
 0 = completely wrong or no answer
 10 = correct and optimal
+Provide actionable feedback also
 
-Score each question independently.
+Also provide:
+- Overall feedback
 
-Return strictly valid JSON:
+IMPORTANT:
+- Do not hallucinate missing answers
+- Evaluate only based on given response
+- Return strictly valid JSON
 
 {
-  "results":[
-     {"question_id":"string","score":number}
-  ]
+  "results":
+    [
+        {
+        "question_id":"string",
+        "feedback": "string",
+        "score":number
+        }, ....
+    ],
+    "overall_feedback": "string"
 }
 """
 
@@ -201,13 +235,22 @@ Return strictly valid JSON:
                             "type": "object",
                             "properties": {
                                 "question_id": {"type": "string"},
+                                "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
-                            "required": ["question_id", "score"]
+                            "required": [
+                                "question_id",
+                                "feedback",
+                                "score"
+                            ]
                         }
-                    }
+                    },
+                    "overall_feedback": {"type": "string"}
                 },
-                "required": ["results"]
+                "required": [
+                    "results",
+                    "overall_feedback"
+                ]
             }
         }
     }
@@ -217,10 +260,8 @@ Return strictly valid JSON:
     try:
 
         response_content = response.choices[0].message.content
-
-        result = json.loads(response_content)
-
-        return result["results"]
+        response_json = json.loads(response_content)
+        return response_json
 
     except Exception:
 
@@ -250,13 +291,26 @@ Score each question from 0 to 10
 0 = completely wrong or no answer
 10 = conceptually correct and optimal
 Score each question independently.
+Provide actionable feedback also
 
-Return strictly valid JSON:
+Also provide:
+- Overall feedback
+
+IMPORTANT:
+- Do not hallucinate missing answers
+- Evaluate only based on given response
+- Return strictly valid JSON
 
 {
-  "results":[
-     {"question_id":"string","score":number}
-  ]
+  "results":
+    [
+        {
+        "question_id":"string",
+        "feedback": "string",
+        "score":number
+        }, ....
+    ],
+    "overall_feedback": "string"
 }
 """
 
@@ -275,13 +329,22 @@ Return strictly valid JSON:
                             "type": "object",
                             "properties": {
                                 "question_id": {"type": "string"},
+                                "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
-                            "required": ["question_id", "score"]
+                            "required": [
+                                "question_id",
+                                "feedback",
+                                "score"
+                            ]
                         }
-                    }
+                    },
+                    "overall_feedback": {"type": "string"}
                 },
-                "required": ["results"]
+                "required": [
+                    "results",
+                    "overall_feedback"
+                ]
             }
         }
     }
@@ -290,8 +353,8 @@ Return strictly valid JSON:
  
     try:
         response_content = response.choices[0].message.content
-        result = json.loads(response_content)
-        return result["results"]
+        response_json = json.loads(response_content)
+        return response_json
 
     except Exception:
 
@@ -343,12 +406,26 @@ Score each question from 0 to 10
 10 = confident, structured, and highly relevant response  
 Score each question independently.
 
-Return strictly valid JSON:
+Provide actionable feedback also
+
+Also provide:
+- Overall feedback
+
+IMPORTANT:
+- Do not hallucinate missing answers
+- Evaluate only based on given response
+- Return strictly valid JSON
 
 {
-  "results":[
-     {"question_id":"string","score":number}
-  ]
+  "results":
+    [
+        {
+        "question_id":"string",
+        "feedback": "string",
+        "score":number
+        }, ....
+    ],
+    "overall_feedback": "string"
 }
 """
 
@@ -373,13 +450,22 @@ Return strictly valid JSON:
                             "type": "object",
                             "properties": {
                                 "question_id": {"type": "string"},
+                                "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
-                            "required": ["question_id", "score"]
+                            "required": [
+                                "question_id",
+                                "feedback",
+                                "score"
+                            ]
                         }
-                    }
+                    },
+                    "overall_feedback": {"type": "string"}
                 },
-                "required": ["results"]
+                "required": [
+                    "results",
+                    "overall_feedback"
+                ]
             }
         }
     }
@@ -388,8 +474,8 @@ Return strictly valid JSON:
 
     try:
         response_content = response.choices[0].message.content
-        result = json.loads(response_content)
-        return result["results"]
+        response_json = json.loads(response_content)
+        return response_json
 
     except Exception:
 
