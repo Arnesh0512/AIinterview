@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from database import candidate_collection
-from schemas.candidate import CandidateCreate
+from schemas.user import UserCreate
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
 
@@ -17,7 +17,7 @@ router = APIRouter(
 
 @router.patch("/register")
 def register_candidate(
-    candidate_data: CandidateCreate,
+    candidate_data: UserCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
 
@@ -56,7 +56,7 @@ def register_candidate(
 
 @router.put("/change-details")
 def change_candidate_details(
-    candidate_data: CandidateCreate,
+    candidate_data: UserCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
 

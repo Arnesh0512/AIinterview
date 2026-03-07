@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routes import auth, candidate, concept, resume, github, coding, ranking, dev, constants
+from routes import auth,admin, candidate, concept, resume, github, coding, ranking, dev, constants, voice, contest
 from fastapi.middleware.cors import CORSMiddleware
 from utils.reader import Frontend
 import os
@@ -30,7 +30,7 @@ async def custom_swagger():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[Frontend],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -46,3 +46,6 @@ app.include_router(coding.router)
 app.include_router(concept.router)
 app.include_router(ranking.router)
 app.include_router(constants.router)
+app.include_router(admin.router)
+app.include_router(contest.router)
+app.include_router(voice.router)

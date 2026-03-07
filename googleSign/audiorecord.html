@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Voice Interview</title>
+
+<style>
+
+body{
+font-family:Arial;
+background:#eef2f7;
+}
+
+.container{
+width:900px;
+margin:auto;
+margin-top:50px;
+background:white;
+padding:30px;
+border-radius:10px;
+box-shadow:0 0 15px rgba(0,0,0,0.1);
+}
+
+h2{
+text-align:center;
+}
+
+input{
+width:100%;
+padding:10px;
+border-radius:6px;
+border:1px solid #ccc;
+margin-bottom:15px;
+}
+
+button{
+margin-top:10px;
+padding:10px 20px;
+border:none;
+background:#2563eb;
+color:white;
+border-radius:6px;
+cursor:pointer;
+}
+
+button.stop{
+background:#dc2626;
+}
+
+button.run{
+background:#059669;
+}
+
+.results{
+margin-top:30px;
+}
+
+.card{
+border:1px solid #ddd;
+padding:15px;
+border-radius:8px;
+margin-bottom:15px;
+background:#fafafa;
+}
+
+.model{
+font-weight:bold;
+font-size:18px;
+margin-bottom:5px;
+}
+
+.metric{
+font-size:14px;
+color:#444;
+margin-bottom:5px;
+}
+
+.analysis{
+margin-top:10px;
+background:#f3f4f6;
+padding:10px;
+border-radius:5px;
+}
+
+.transcript{
+margin-top:10px;
+font-style:italic;
+}
+
+.segments{
+margin-top:10px;
+background:#eef2ff;
+padding:10px;
+border-radius:5px;
+font-size:14px;
+}
+
+.segment{
+margin-bottom:4px;
+}
+
+.status{
+margin-top:15px;
+font-weight:bold;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Voice Interview Evaluator</h2>
+
+<input id="question" placeholder="Enter interview question">
+
+<button onclick="startRecording()">Start Recording</button>
+<button class="stop" onclick="stopRecording()">Stop Recording</button>
+
+<br>
+
+<button class="run" onclick="upload()">Evaluate Answer</button>
+
+<div class="status" id="status"></div>
+
+<div id="results" class="results"></div>
+
+</div>
+
+<script>
+
+let audioContext
+let processor
+let input
+let globalStream
+let recording=false
+let audioData=[]
+let wavBlob=null
+
+
+async function startRecording(){
+
+audioData=[]
+
+globalStream = await navigator.mediaDevices.getUserMedia({audio:true})
+
+audioContext = new AudioContext({sampleRate:16000})
+
+input = audioContext.createMediaStreamSource(globalStream)
+
+processor = audioContext.createScriptProcessor(4096,1,1)
+
+processor.onaudioprocess = e => {
+
+if(!recording) return
+
+const channel = e.inputBuffer.getChannelData(0)
+
+audioData.push(new Float32Array(channel))
+
+}
+
+input.connect(processor)
+processor.connect(audioContext.destination)
+
+recording=true
+
+document.getElementById("status").innerText="Recording..."
+
+}
+
+
+function stopRecording(){
+
+recording=false
+
+wavBlob = encodeWAV(audioData)
+
+if(globalStream){
+globalStream.getTracks().forEach(track=>track.stop())
+}
+
+document.getElementById("status").innerText="Recording ready"
+
+}
+
+
+function encodeWAV(buffers){
+
+let length = buffers.reduce((sum,b)=>sum+b.length,0)
+
+let data = new Float32Array(length)
+
+let offset = 0
+
+buffers.forEach(b=>{
+data.set(b,offset)
+offset += b.length
+})
+
+let buffer = new ArrayBuffer(44 + data.length*2)
+let view = new DataView(buffer)
+
+function writeString(view,offset,string){
+for(let i=0;i<string.length;i++)
+view.setUint8(offset+i,string.charCodeAt(i))
+}
+
+writeString(view,0,"RIFF")
+view.setUint32(4,36 + data.length*2,true)
+writeString(view,8,"WAVE")
+
+writeString(view,12,"fmt ")
+view.setUint32(16,16,true)
+view.setUint16(20,1,true)
+view.setUint16(22,1,true)
+view.setUint32(24,16000,true)
+view.setUint32(28,16000*2,true)
+view.setUint16(32,2,true)
+view.setUint16(34,16,true)
+
+writeString(view,36,"data")
+view.setUint32(40,data.length*2,true)
+
+let offset2=44
+
+for(let i=0;i<data.length;i++){
+
+let s=Math.max(-1,Math.min(1,data[i]))
+view.setInt16(offset2,s<0?s*0x8000:s*0x7fff,true)
+offset2+=2
+
+}
+
+return new Blob([view],{type:"audio/wav"})
+
+}
+
+
+async function upload(){
+
+if(!wavBlob){
+alert("Record audio first")
+return
+}
+
+const question = document.getElementById("question").value
+
+if(!question){
+alert("Enter question")
+return
+}
+
+const form=new FormData()
+
+form.append("audio",wavBlob,"recording.wav")
+form.append("question",question)
+
+document.getElementById("status").innerText="Evaluating..."
+
+const response=await fetch("http://127.0.0.1:8000/voice/submit",{
+
+method:"POST",
+body:form,
+headers:{
+"Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjYW5kaWRhdGVfaWQiOiI2OWE1ZDYyYjcyMTdhZDhkYjVkMGY0MjYiLCJlbWFpbCI6ImFybmVzaDA1MjAwNkBnbWFpbC5jb20iLCJyb2xlIjoiY2FuZGlkYXRlIiwiZXhwIjoxNzgyODQ0MjAwfQ.y7yoPFA_CjulTEQXz0fr9mX6qA6OPTAV2Q-tCgl6qTY"
+}
+
+})
+
+const data=await response.json()
+
+const container=document.getElementById("results")
+container.innerHTML=""
+
+data.results.forEach(model=>{
+
+let segmentsHTML=""
+
+if(model.segmented_data){
+
+model.segmented_data.forEach(seg=>{
+
+segmentsHTML += `
+<div class="segment">
+${seg.start ?? 0} - ${seg.end ?? "-"} : ${seg.text}
+</div>
+`
+
+})
+
+}
+
+container.innerHTML+=`
+
+<div class="card">
+
+<div class="model">${model.model}</div>
+
+<div class="metric">Score: ${model.score}</div>
+
+<div class="analysis">
+<b>Analysis</b><br>
+${JSON.stringify(model.analysis, null, 2)}
+</div>
+
+<div class="transcript">
+<b>Transcript</b><br>
+${model.transcript}
+</div>
+
+<div class="segments">
+<b>Segments</b><br>
+${segmentsHTML}
+</div>
+
+</div>
+
+`
+
+})
+
+document.getElementById("status").innerText="Evaluation complete"
+
+}
+
+</script>
+
+</body>
+
+</html>

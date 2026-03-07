@@ -3,7 +3,8 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from typing import Tuple
 from database import leetcode, coding_collection, coding_question_collection
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from utils.time import generate_timestamp
 
 
 def verify_coding(
@@ -102,7 +103,7 @@ def verify_session_status(session_doc: dict):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Session is not active"
         )
-    
+     
 def verify_session_status2(session_doc: dict):
 
     if session_doc.get("status") != "passive":
@@ -119,7 +120,7 @@ def verify_session_time(session_doc: dict, session_obj_id: ObjectId):
     start_time = session_doc["timestamp"]
     total_time = session_doc["time"]
 
-    now = datetime.now(timezone.utc)
+    now = generate_timestamp()
     elapsed_minutes = (now - start_time).total_seconds() / 60
 
     if elapsed_minutes > total_time:
@@ -133,5 +134,41 @@ def verify_session_time(session_doc: dict, session_obj_id: ObjectId):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Session time expired"
         )
+
+
+
+
+
+
+
+def verify_timestamp(frontend_time):
+    try:
+        if frontend_time.tzinfo is not None:
+            frontend_time = frontend_time.astimezone(timezone.utc)
+        else:
+            frontend_time = frontend_time.replace(tzinfo=timezone.utc)
+
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid frontend timestamp format"
+        )
+    
+    backend_time = generate_timestamp()
+
+
+    time_diff_seconds = abs((backend_time - frontend_time).total_seconds())
+
+    if time_diff_seconds > 120:
+        raise HTTPException(
+            status_code=400,
+            detail="Submission time mismatch exceeds 2 minutes"
+        )
+    
+    return frontend_time, backend_time
+
+
+
+
 
 

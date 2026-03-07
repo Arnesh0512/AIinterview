@@ -7,11 +7,12 @@ from database import resume_collection, resume_question_collection, resume_fs, c
 from prompt.resume import process_resume, generate_resume_question, evaluate_resume_answers, generate_resume_combined_diff_session_feedback, generate_resume_combined_same_session_feedback
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
-from verify.resume import verify_resume, verify_question_session, verify_session_status, verify_session_time, verify_question_number, verify_session_status2, verify_file_id
+from verify.resume import verify_resume, verify_question_session, verify_session_status,verify_session_status2, verify_session_time, verify_question_number, verify_file_id, verify_timestamp
 from fastapi.responses import StreamingResponse
 from datetime import datetime, timedelta, timezone
-from utils.resume import previous_resume_session_questions
+from utils.resume import previous_resume_session_questions, auto_submit
 from utils.time import generate_timestamp
+import asyncio
 
 router = APIRouter(
     prefix="/resume",
@@ -137,6 +138,57 @@ def get_resume_file(
 
 
 
+@router.post("/questions/submit")
+def submit_session(
+    resume_id: str,
+    question_session_id: str,
+    frontend_timestamp: datetime,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+    frontend_time , backend_time = verify_timestamp(frontend_timestamp)
+
+    resume_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": frontend_time,
+                "submitted_at_backend": backend_time,
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @router.post("/questions/new")
@@ -203,13 +255,21 @@ def generate_questions(
     resume_collection.update_one(
         {"_id": resume_obj_id},
         {
-            "$set": {
-                f"question_session_ids.{str(question_session_id)}": timestamp
-            },
             "$inc": {
                 "total_sessions": 1
             }
         }
+    )
+
+    asyncio.create_task(
+        auto_submit(
+            concept_id=str(resume_id),
+            question_session_id=str(question_session_id),
+            token=token,
+            start_time = timestamp,
+            duration = time,
+            fun = submit_session
+        )
     )
 
     formatted_questions = {
@@ -271,112 +331,10 @@ def save_answer(
     return {"success": True}
 
 
-@router.post("/questions/submit")
-def submit_session(
-    resume_id: str,
-    question_session_id: str,
-    frontend_timestamp: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    candidate, candidate_id, email = verify_candidate_payload(payload)
-
-    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
-    session_doc, session_obj_id = verify_question_session(
-        question_session_id,
-        resume_obj_id
-    )
-
-    verify_session_status(session_doc)
-    verify_session_time(session_doc, session_obj_id)
 
 
-    try:
-        frontend_time = datetime.fromisoformat(frontend_timestamp)
-
-        if frontend_time.tzinfo is not None:
-            frontend_time = frontend_time.astimezone(timezone.utc)
-        else:
-            frontend_time = frontend_time.replace(tzinfo=timezone.utc)
-
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid frontend timestamp format"
-        )
-
-    backend_time = generate_timestamp()
-
-    time_diff_seconds = abs((backend_time - frontend_time).total_seconds())
-
-    if time_diff_seconds > 120:
-        raise HTTPException(
-            status_code=400,
-            detail="Submission time mismatch exceeds 2 minutes"
-        )
-
-    resume_question_collection.update_one(
-        {"_id": session_obj_id},
-        {
-            "$set": {
-                "status": "passive",
-                "submitted_at_frontend": frontend_time,
-                "submitted_at_backend": backend_time,
-            }
-        }
-    )
-
-    return {"success": True}
 
 
-@router.patch("/questions/autosubmit")
-def auto_submit_session(
-    resume_id: str,
-    question_session_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    candidate, candidate_id, email = verify_candidate_payload(payload)
-
-    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
-    session_doc, session_obj_id = verify_question_session(
-        question_session_id,
-        resume_obj_id
-    )
-
-    if session_doc.get("status") == "passive":
-        return {"success": True, "message": "Already submitted"}
-
-
-    timestamp = session_doc.get("timestamp")
-    time = session_doc.get("time")
-
-
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-
-    auto_submit_time = timestamp + timedelta(
-        minutes=time + 1
-    )
-
-    resume_question_collection.update_one(
-        {"_id": session_obj_id},
-        {
-            "$set": {
-                "status": "passive",
-                "submitted_at_frontend": auto_submit_time,
-                "submitted_at_backend": auto_submit_time
-            }
-        }
-    )
-
-    return {
-        "success": True
-    }
 
 
 @router.put("/questions/reattempt")
@@ -423,18 +381,74 @@ def reattempt_session(
     inserted = resume_question_collection.insert_one(new_doc)
     new_session_id = inserted.inserted_id
 
-    resume_collection.update_one(
-        {"_id": resume_obj_id},
-        {
-            "$set": {
-                f"question_session_ids.{str(new_session_id)}": timestamp
-            }
-        }
+    asyncio.create_task(
+        auto_submit(
+            concept_id=resume_id,
+            question_session_id=question_session_id,
+            token=token,
+            start_time = timestamp,
+            duration = old_session_doc["time"],
+            fun = submit_session
+        )
     )
 
     return {
         "new_question_session_id": str(new_session_id)
     }
+
+
+
+
+@router.patch("/questions/fake/submit")
+def fake_submit_session(
+    resume_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        resume_obj_id
+    )
+
+    verify_session_status(session_doc)
+
+
+    timestamp = session_doc.get("timestamp")
+    time = session_doc.get("time")
+
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    auto_submit_time = timestamp + timedelta(
+        minutes=time + 1
+    )
+
+    resume_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": auto_submit_time,
+                "submitted_at_backend": auto_submit_time
+            }
+        }
+    )
+
+    return {
+        "success": True
+    }
+
+
+
+
+
 
 
 @router.get("/questions/feedback")
@@ -678,6 +692,17 @@ def delete_and_reattempt(
                 "submitted_at_backend": ""
             }
         }
+    )
+
+    asyncio.create_task(
+        auto_submit(
+            concept_id=resume_id,
+            question_session_id=question_session_id,
+            token=token,
+            start_time = timestamp,
+            duration = session_doc["time"],
+            fun = submit_session
+        )
     )
 
     return {"success": True}

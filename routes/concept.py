@@ -6,10 +6,11 @@ from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
 from constants.topic import TopicEnum
 from typing import List
-from verify.concept import verify_concept, verify_question_number, verify_question_session, verify_session_status, verify_session_time, verify_session_status2
+from verify.concept import verify_concept, verify_question_number, verify_question_session, verify_session_status,verify_session_status2, verify_session_time, verify_timestamp
 from prompt.concept import generate_concept_topic_questions, evaluate_concept_topic_answers, generate_concept_combined_diff_session_feedback, generate_concept_combined_same_session_feedback
-from utils.concept import previous_concept_session_questions
+from utils.concept import previous_concept_session_questions, auto_submit
 from utils.time import generate_timestamp
+import asyncio
 
 router = APIRouter(prefix="/concept", tags=["Conceptual"])
 security = HTTPBearer()
@@ -87,6 +88,46 @@ def get_all_concept_ids(
 
 
 
+@router.post("/questions/submit")
+def submit_session(
+    concept_id: str,
+    question_session_id: str,
+    frontend_timestamp: datetime,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        concept_obj_id
+    )
+
+    verify_session_status(session_doc)
+    verify_session_time(session_doc, session_obj_id)
+    frontend_time , backend_time = verify_timestamp(frontend_timestamp)
+
+    concept_question_collection.update_one(
+        {"_id": session_obj_id},
+        {
+            "$set": {
+                "status": "passive",
+                "submitted_at_frontend": frontend_time,
+                "submitted_at_backend": backend_time,
+            }
+        }
+    )
+
+    return {"success": True}
+
+
+
+
+
+
 
 @router.post("/questions/new")
 def generate_questions(
@@ -151,9 +192,6 @@ def generate_questions(
     concept_collection.update_one(
         {"_id": concept_id},
         {
-            "$set": {
-                f"question_session_ids.{str(question_session_id)}": timestamp
-            },
             "$inc": {
                 "total_sessions": 1
             }
@@ -164,7 +202,19 @@ def generate_questions(
         i + 1: q for i, q in enumerate(questions_list)
     }
 
-    
+    asyncio.create_task(
+        auto_submit(
+            concept_id=str(concept_id),
+            question_session_id=str(question_session_id),
+            token=token,
+            start_time = timestamp,
+            duration = time,
+            fun = submit_session
+        )
+    )
+
+
+
 
     return {
         "concept_id": str(concept_id),
@@ -216,119 +266,6 @@ def save_answer(
 
 
 
-@router.post("/questions/submit")
-def submit_session(
-    concept_id: str,
-    question_session_id: str,
-    frontend_timestamp: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    candidate, candidate_id, email = verify_candidate_payload(payload)
-
-    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
-    session_doc, session_obj_id = verify_question_session(
-        question_session_id,
-        concept_obj_id
-    )
-
-    verify_session_status(session_doc)
-    verify_session_time(session_doc, session_obj_id)
-
-
-    try:
-        frontend_time = datetime.fromisoformat(frontend_timestamp)
-
-        if frontend_time.tzinfo is not None:
-            frontend_time = frontend_time.astimezone(timezone.utc)
-        else:
-            frontend_time = frontend_time.replace(tzinfo=timezone.utc)
-
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid frontend timestamp format"
-        )
-
-    backend_time = generate_timestamp()
-
-    time_diff_seconds = abs((backend_time - frontend_time).total_seconds())
-
-    if time_diff_seconds > 120:
-        raise HTTPException(
-            status_code=400,
-            detail="Submission time mismatch exceeds 2 minutes"
-        )
-
-    concept_question_collection.update_one(
-        {"_id": session_obj_id},
-        {
-            "$set": {
-                "status": "passive",
-                "submitted_at_frontend": frontend_time,
-                "submitted_at_backend": backend_time,
-            }
-        }
-    )
-
-    return {"success": True}
-
-
-
-
-@router.patch("/questions/autosubmit")
-def auto_submit_session(
-    concept_id: str,
-    question_session_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    candidate, candidate_id, email = verify_candidate_payload(payload)
-
-    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
-    session_doc, session_obj_id = verify_question_session(
-        question_session_id,
-        concept_obj_id
-    )
-
-    if session_doc.get("status") == "passive":
-        return {"success": True, "message": "Already submitted"}
-
-
-    timestamp = session_doc.get("timestamp")
-    time = session_doc.get("time")
-
-
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-
-    auto_submit_time = timestamp + timedelta(
-        minutes=time + 1
-    )
-
-    concept_question_collection.update_one(
-        {"_id": session_obj_id},
-        {
-            "$set": {
-                "status": "passive",
-                "submitted_at_frontend": auto_submit_time,
-                "submitted_at_backend": auto_submit_time
-            }
-        }
-    )
-
-    return {
-        "success": True
-    }
-
-
-
-
-
 @router.put("/questions/reattempt")
 def reattempt_session(
     concept_id: str,
@@ -373,17 +310,65 @@ def reattempt_session(
     inserted = concept_question_collection.insert_one(new_doc)
     new_session_id = inserted.inserted_id
 
-    concept_collection.update_one(
-        {"_id": concept_obj_id},
+    asyncio.create_task(
+        auto_submit(
+            concept_id=concept_id,
+            question_session_id=question_session_id,
+            token=token,
+            start_time = timestamp,
+            duration = old_session_doc["time"],
+            fun = submit_session
+        )
+    )
+
+    return {
+        "new_question_session_id": str(new_session_id)
+    }
+
+
+@router.patch("/questions/fake/submit")
+def fake_submit_session(
+    concept_id: str,
+    question_session_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    concept_doc, concept_obj_id = verify_concept(concept_id, candidate_id)
+    session_doc, session_obj_id = verify_question_session(
+        question_session_id,
+        concept_obj_id
+    )
+    verify_session_status(session_doc)
+
+
+    timestamp = session_doc.get("timestamp")
+    time = session_doc.get("time")
+
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    auto_submit_time = timestamp + timedelta(
+        minutes=time + 1
+    )
+
+    concept_question_collection.update_one(
+        {"_id": session_obj_id},
         {
             "$set": {
-                f"question_session_ids.{str(new_session_id)}": timestamp
+                "status": "passive",
+                "submitted_at_frontend": auto_submit_time,
+                "submitted_at_backend": auto_submit_time
             }
         }
     )
 
     return {
-        "new_question_session_id": str(new_session_id)
+        "success": True
     }
 
 
@@ -627,6 +612,17 @@ def delete_and_reattempt(
                 "submitted_at_backend": ""
             }
         }
+    )
+
+    asyncio.create_task(
+        auto_submit(
+            concept_id=concept_id,
+            question_session_id=question_session_id,
+            token=token,
+            start_time = timestamp,
+            duration = session_doc["time"],
+            fun = submit_session
+        )
     )
 
     return {"success": True}

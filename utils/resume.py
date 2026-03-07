@@ -4,7 +4,12 @@ from pdf2image import convert_from_path
 from bson import ObjectId
 from database import resume_question_collection
 from fastapi import HTTPException
-
+from datetime import datetime, timezone, timedelta
+from typing import Callable, Awaitable, Union
+import asyncio
+from fastapi.security import HTTPAuthorizationCredentials
+import inspect
+from utils.time import generate_timestamp
 
 
 def extract_text_without_ocr(pdf_path):
@@ -38,7 +43,10 @@ def previous_resume_session_questions(
     session_dict = {}
     sessions_used = {}
     
-    search_query = {"resume_id": resume_id}
+    search_query = {
+        "resume_id": resume_id,
+        "status": "passive"
+        }
 
     if session_number:
         search_query["session_number"] = session_number
@@ -104,4 +112,34 @@ def previous_resume_session_questions(
 
 
     
+
+
+async def auto_submit(
+    resume_id: str,
+    question_session_id: str,
+    token: str,
+    start_time : datetime,
+    duration: int,
+    fun: Union[
+    Callable[[str, str, datetime, HTTPAuthorizationCredentials], None],
+    Callable[[str, str, datetime, HTTPAuthorizationCredentials], Awaitable[None]]
+    ]
+):
+    credentials = HTTPAuthorizationCredentials(
+        scheme="Bearer",
+        credentials=token
+    )
+
+    end_time = start_time + timedelta(seconds=duration) + timedelta(minutes=1)
+    now = generate_timestamp()
+    wait_seconds = (end_time - now).total_seconds()
+
+    if wait_seconds > 0:
+        await asyncio.sleep(wait_seconds)
+
+    if inspect.iscoroutinefunction(fun):
+        await fun(resume_id, question_session_id, generate_timestamp(), credentials)
+    else:
+        fun(resume_id, question_session_id, generate_timestamp(), credentials)
+
 

@@ -16,7 +16,7 @@ class Education(BaseModel):
     is_current: bool
 
 
-class CandidateCreate(BaseModel):
+class UserCreate(BaseModel):
 
     # Basic Info
     full_name: str
@@ -35,3 +35,4 @@ class CandidateCreate(BaseModel):
     # Social
     linkedin_url: HttpUrl
     github_url: HttpUrl
+
