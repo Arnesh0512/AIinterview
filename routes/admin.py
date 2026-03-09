@@ -257,6 +257,8 @@ async def generate_resume_result(
 
     contest, contest_obj_id = verify_contest_id(contest_id)
 
+    
+
     candidates = list(
         contest_candidate_collection.find(
             {
@@ -297,6 +299,24 @@ async def generate_resume_result(
                 "raw_score": score,
                 "submitted_at": submitted_at
             })
+
+    all_candidates = contest["registered_candidates"]
+    all_candidates_str = {str(cid) for cid in all_candidates}
+    participated = {entry["candidate_id"] for entry in candidates_scores[0]}
+    missing_candidates = all_candidates_str - participated
+
+    for qid in range(question_count):
+
+        min_score = min(entry["raw_score"] for entry in candidates_scores[qid])
+        penalty_score = min_score - 1
+
+        for cid in missing_candidates:
+            candidates_scores[qid].append({
+                "candidate_id": cid,
+                "raw_score": penalty_score,
+                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
+            })
+    
 
     leaderboard = normalize_and_rank(candidates_scores)
 
@@ -397,6 +417,24 @@ async def generate_coding_result(
                 "candidate_id": str(candidate_id),
                 "raw_score": score,
                 "submitted_at": timestamp
+            })
+
+
+    all_candidates = contest["registered_candidates"]
+    all_candidates_str = {str(cid) for cid in all_candidates}
+    participated = {entry["candidate_id"] for entry in candidates_scores[0]}
+    missing_candidates = all_candidates_str - participated
+
+    for qid in range(question_count):
+
+        min_score = min(entry["raw_score"] for entry in candidates_scores[qid])
+        penalty_score = min_score - 1
+
+        for cid in missing_candidates:
+            candidates_scores[qid].append({
+                "candidate_id": cid,
+                "raw_score": penalty_score,
+                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
             })
 
     leaderboard = normalize_and_rank(candidates_scores)
@@ -501,6 +539,23 @@ async def generate_concept_result(
                 "candidate_id": str(candidate_id),
                 "raw_score": score,
                 "submitted_at": timestamp
+            })
+
+    all_candidates = contest["registered_candidates"]
+    all_candidates_str = {str(cid) for cid in all_candidates}
+    participated = {entry["candidate_id"] for entry in candidates_scores[0]}
+    missing_candidates = all_candidates_str - participated
+
+    for qid in range(question_count):
+
+        min_score = min(entry["raw_score"] for entry in candidates_scores[qid])
+        penalty_score = min_score - 1
+
+        for cid in missing_candidates:
+            candidates_scores[qid].append({
+                "candidate_id": cid,
+                "raw_score": penalty_score,
+                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
             })
 
     leaderboard = normalize_and_rank(candidates_scores)
@@ -609,6 +664,24 @@ async def generate_hr_result(
                 "candidate_id": str(candidate_id),
                 "raw_score": score,
                 "submitted_at": timestamp
+            })
+
+
+    all_candidates = contest["registered_candidates"]
+    all_candidates_str = {str(cid) for cid in all_candidates}
+    participated = {entry["candidate_id"] for entry in candidates_scores[0]}
+    missing_candidates = all_candidates_str - participated
+
+    for qid in range(question_count):
+
+        min_score = min(entry["raw_score"] for entry in candidates_scores[qid])
+        penalty_score = min_score - 1
+
+        for cid in missing_candidates:
+            candidates_scores[qid].append({
+                "candidate_id": cid,
+                "raw_score": penalty_score,
+                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
             })
 
     leaderboard = normalize_and_rank(candidates_scores)
