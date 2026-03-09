@@ -1,16 +1,7 @@
 from datetime import datetime
 from collections import defaultdict
 import math
-'''
-    """ INPUT::
-    candidates_scores: List[List[Dict]]
-    [
-        [ {candidate_id, raw_score, submitted_at}, ... ],  # Q1
-        [ {candidate_id, raw_score, submitted_at}, ... ],  # Q2
-        ...
-    ]
 
-'''
 
 def normalize_and_rank(candidates_scores):
 

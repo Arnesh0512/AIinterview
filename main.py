@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routes import auth,admin, candidate, concept, resume, github, coding, ranking, dev, constants, voice, contest
+from routes import auth,admin, candidate, concept, resume, github, coding, ranking, dev, constants, contest
 from fastapi.middleware.cors import CORSMiddleware
 from utils.reader import Frontend
 import os
@@ -48,4 +48,3 @@ app.include_router(ranking.router)
 app.include_router(constants.router)
 app.include_router(admin.router)
 app.include_router(contest.router)
-app.include_router(voice.router)

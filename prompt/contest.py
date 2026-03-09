@@ -374,11 +374,15 @@ You will receive a list of dictionaries in the following format:
 {
  "question_id": "string",
  "question": "string",
- "transcript": [
-   {"start": number, "end": number, "text": "spoken text"},
+ "transcript": "string",
+ "segmented_data":[
+   {"start": number, "end": number, "text": "string"},
    ...
  ]
 }
+transcript is made using segmented_data text field 
+
+It is given candidate was given exactly 1 minute to speak his answer. ##########
 
 For question_id "1" the question will be:
 "Introduce Yourself"

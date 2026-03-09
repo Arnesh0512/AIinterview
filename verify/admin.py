@@ -273,6 +273,15 @@ def validate_contest_data(data: ContestCreate):
             detail="Error in number of questions"
         )
     
+    if(resume_duration/60 < data.resume_questions_count or 
+       coding_duration/60 < data.coding_questions_count or
+       concept_duration/60 < data.concept_questions_count or
+       hr_duration/60 < data.hr_questions_count ):
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough time provided."
+        )
+    
 
 
 

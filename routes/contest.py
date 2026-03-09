@@ -20,7 +20,7 @@ from verify.contest import verify_concept_time_open, verify_concept_question, ve
 from verify.contest import verify_hr_time_open, verify_hr_question, verify_hr_time, verify_hr_submit, verify_hr_result_time
 import tempfile
 from database import contest_audio_fs
-from model import call_audio_model
+from model import call_audio_model_1
 
 
 
@@ -336,11 +336,7 @@ def get_resume_leaderboard(
 
     leaderboard = leaderboard_doc["resume_round"]
     candidate_ids = [entry["candidate_id"] for entry in leaderboard]
-    if real_candidate_id not in candidate_ids:
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate didn't participate in resume round."
-        )
+
 
 
     candidates = list(
@@ -624,11 +620,7 @@ def get_coding_leaderboard(
 
     leaderboard = leaderboard_doc["coding_round"]
     candidate_ids = [entry["candidate_id"] for entry in leaderboard]
-    if real_candidate_id not in candidate_ids:
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate didn't participate in coding round."
-        )
+
 
 
     candidates = list(
@@ -913,11 +905,7 @@ def get_concept_leaderboard(
 
     leaderboard = leaderboard_doc["concept_round"]
     candidate_ids = [entry["candidate_id"] for entry in leaderboard]
-    if real_candidate_id not in candidate_ids:
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate didn't participate in concept round."
-        )
+
 
 
     candidates = list(
@@ -1062,6 +1050,7 @@ async def get_hr_questions(
                 "question_id": qid,
                 "audio_id": None,
                 "transcript": None,
+                "segmented_data": None,
                 "timestamp": None,
                 "score": None
             }
@@ -1148,7 +1137,7 @@ async def submit_hr_answer(
 
         temp_audio_path = temp_audio.name
 
-    transcript = call_audio_model(temp_audio_path)
+    segmented_data , transcript = call_audio_model_1(temp_audio_path)
 
     with open(temp_audio_path, "rb") as f:
         audio_file_id = contest_audio_fs.put(
@@ -1167,6 +1156,7 @@ async def submit_hr_answer(
             "$set": {
                 "hr.question_bank.$.audio_id": audio_file_id,
                 "hr.question_bank.$.transcript": transcript,
+                "hr.question_bank.$.segmented_data": segmented_data,
                 "hr.question_bank.$.timestamp": timestamp,
                 "hr.question_bank.$.score": None
             }
@@ -1213,11 +1203,6 @@ def get_hr_leaderboard(
 
     leaderboard = leaderboard_doc["hr_round"]
     candidate_ids = [entry["candidate_id"] for entry in leaderboard]
-    if real_candidate_id not in candidate_ids:
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate didn't participate in hr round."
-        )
 
 
     candidates = list(

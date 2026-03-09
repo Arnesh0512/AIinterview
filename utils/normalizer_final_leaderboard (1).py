@@ -1,19 +1,6 @@
 from datetime import datetime
 from collections import defaultdict
 
-''' INPUT: 
-section1 = [
-    {"candidate_id": "u1", "final_normalized_score": 1.5, "latest_submission": datetime(2026,2,26,10,15), "rank": 1, "percentile": 50},
-    {"candidate_id": "u2", "final_normalized_score": 0.5, "latest_submission": datetime(2026,2,26,10,20), "rank": 2, "percentile": 0},
-]
-
-section2 = [
-    {"candidate_id": "u1", "final_normalized_score": 2.0, "latest_submission": datetime(2026,2,26,10,25), "rank": 1, "percentile": 50},
-    {"candidate_id": "u2", "final_normalized_score": 1.0, "latest_submission": datetime(2026,2,26,10,28), "rank": 2, "percentile": 0},
-]
-
-'''
-
 def finalize_leaderboard(section_outputs):
 
     cumulative = defaultdict(lambda: {
@@ -66,14 +53,34 @@ def finalize_leaderboard(section_outputs):
 
     return leaderboard
 
+'''
+sections = [
+    [#section 1 
+        {"candidate_id": "u1", "final_normalized_score": 1.5, "latest_submission": datetime(2026,2,26,10,15), "rank": 1, "percentile": 50},
+        {"candidate_id": "u2", "final_normalized_score": 0.5, "latest_submission": datetime(2026,2,26,10,20), "rank": 2, "percentile": 0},
+    ],
+    [#section 2
+        {"candidate_id": "u1", "final_normalized_score": 2.0, "latest_submission": datetime(2026,2,26,10,25), "rank": 1, "percentile": 50},
+        {"candidate_id": "u2", "final_normalized_score": 1.0, "latest_submission": datetime(2026,2,26,10,28), "rank": 2, "percentile": 0},
+    ]
+]
 
-# sections = [[
-#     {"candidate_id": "u1", "final_normalized_score": 1.5, "latest_submission": datetime(2026,2,26,10,15), "rank": 1, "percentile": 50},
-#     {"candidate_id": "u2", "final_normalized_score": 0.5, "latest_submission": datetime(2026,2,26,10,20), "rank": 2, "percentile": 0},
-# ],
-# [
-#     {"candidate_id": "u1", "final_normalized_score": 2.0, "latest_submission": datetime(2026,2,26,10,25), "rank": 1, "percentile": 50},
-#     {"candidate_id": "u2", "final_normalized_score": 1.0, "latest_submission": datetime(2026,2,26,10,28), "rank": 2, "percentile": 0},
-# ]]
-#
-# print(finalize_leaderboard(sections))
+print(finalize_leaderboard(sections))
+
+[
+    {
+        "candidate_id": "u1",
+        "final_normalized_score": 3.5,  # 1.5 (section1) + 2.0 (section2)
+        "latest_submission": datetime.datetime(2026, 2, 26, 10, 25),  # latest across sections
+        "rank": 1,  # highest cumulative normalized score
+        "percentile": 100.0  # top performer
+    },
+    {
+        "candidate_id": "u2",
+        "final_normalized_score": 1.5,  # 0.5 (section1) + 1.0 (section2)
+        "latest_submission": datetime.datetime(2026, 2, 26, 10, 28),
+        "rank": 2,
+        "percentile": 0.0  # lowest performer
+    }
+]
+'''

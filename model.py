@@ -2,6 +2,7 @@ from openai import OpenAI
 from utils.reader import OPENAP_API_KEY
 import whisper
 from faster_whisper import WhisperModel
+import wave
 
 
 CHATGPT = OpenAI(api_key=OPENAP_API_KEY)
@@ -21,7 +22,50 @@ def call_chatgpt(prompt: str, content: str, temperature: float, reponse_format: 
     return response
 
 
-def call_audio_model(wav_path):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################
+
+# CHAT GPT 4o
+
+###############################################
+
+def call_audio_model_1(wav_path):
 
     with open(wav_path, "rb") as f:
 
@@ -32,17 +76,56 @@ def call_audio_model(wav_path):
 
     transcript = resp.text
 
+    # compute duration
+    with wave.open(wav_path, "rb") as wf:
+        frames = wf.getnframes()
+        rate = wf.getframerate()
+        duration = frames / float(rate)
+
     segmented_data = [{
         "start": 0,
-        "end": None,
+        "end": round(duration, 2),
         "text": transcript
     }]
 
-    return segmented_data
+    return segmented_data, transcript
 
 
 
-def call_audio_model(wav_path):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################
+
+# WHISPER BASE
+
+###############################################
+
+def call_audio_model_2(wav_path):
     whisper_base = whisper.load_model("base")
     result = whisper_base.transcribe(
         wav_path,
@@ -54,24 +137,54 @@ def call_audio_model(wav_path):
     transcript = result["text"]
     segments = result["segments"]
 
-
     segmented_data = []
 
     for seg in segments:
-
         segment = {
             "start": round(seg["start"], 2),
             "end": round(seg["end"], 2),
             "text": seg["text"].strip()
         }
-
         segmented_data.append(segment)
 
-    return segmented_data
+    return segmented_data, transcript
 
 
 
-def call_audio_model(wav_path):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################
+
+# WHISPER SMALL
+
+###############################################
+
+def call_audio_model_3(wav_path):
     whisper_small = whisper.load_model("small")
     result = whisper_small.transcribe(
         wav_path,
@@ -83,26 +196,56 @@ def call_audio_model(wav_path):
     transcript = result["text"]
     segments = result["segments"]
 
-
     segmented_data = []
 
     for seg in segments:
-
         segment = {
             "start": round(seg["start"], 2),
             "end": round(seg["end"], 2),
             "text": seg["text"].strip()
         }
-
         segmented_data.append(segment)
 
-    return segmented_data
+    return segmented_data, transcript
 
 
 
-def call_audio_model(wav_path):
-    fw_base = WhisperModel("base", device="cpu")
-    segments, _ = fw_base.transcribe(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################
+
+# FASTER WHISPER BASE
+
+###############################################
+
+def call_audio_model_4(wav_path):
+    fw_base = WhisperModel("base", device="cpu", compute_type="int8")
+    segments, info = fw_base.transcribe(
         wav_path,
         beam_size=5,
         language="en",
@@ -117,25 +260,56 @@ def call_audio_model(wav_path):
     transcript = ""
 
     for seg in segments:
-
         segment = {
             "start": round(seg.start, 2),
             "end": round(seg.end, 2),
             "text": seg.text.strip()
         }
-
         segmented_data.append(segment)
         transcript += seg.text + " "
 
     transcript = transcript.strip()
 
-    return segmented_data
+    return segmented_data, transcript
 
 
 
-def call_audio_model(wav_path):
-    fw_small = WhisperModel("small", device="cpu")
-    segments, _ = fw_small.transcribe(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################
+
+# FASTER WHISPER SMALL
+
+###############################################
+def call_audio_model_5(wav_path):
+    fw_small = WhisperModel("small", device="cpu", compute_type="int8")
+    segments, info = fw_small.transcribe(
         wav_path,
         beam_size=5,
         language="en",
@@ -150,16 +324,14 @@ def call_audio_model(wav_path):
     transcript = ""
 
     for seg in segments:
-
         segment = {
             "start": round(seg.start, 2),
             "end": round(seg.end, 2),
             "text": seg.text.strip()
         }
-
         segmented_data.append(segment)
         transcript += seg.text + " "
 
     transcript = transcript.strip()
 
-    return segmented_data
+    return segmented_data, transcript

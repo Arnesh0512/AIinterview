@@ -217,7 +217,8 @@ def generate_hr_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, contest
         evaluation_input.append({
             "question_id": qid,
             "question": hr_question_bank[qid],
-            "transcript": q.get("transcript") or [], ###############
+            "transcript": q.get("transcript") or "",
+            "segmented_data": q.get("segmented_data") or []
         })
 
     summary = contest_candidate["resume"]["summary"]
@@ -246,6 +247,7 @@ def generate_hr_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, contest
             "question_id": qid,
             "audio_id": q.get("audio_id"),
             "transcript": q.get("transcript"),
+            "segmented_data": q.get("segmented_data"),
             "timestamp": q.get("timestamp"),
             "feedback": feedback_map.get(qid, ""),
             "score": score_map.get(qid, 0)

@@ -100,6 +100,14 @@ font-size:14px;
 margin-bottom:4px;
 }
 
+.benchmark{
+margin-top:10px;
+background:#ecfdf5;
+padding:10px;
+border-radius:5px;
+font-size:14px;
+}
+
 .status{
 margin-top:15px;
 font-weight:bold;
@@ -261,7 +269,7 @@ form.append("question",question)
 
 document.getElementById("status").innerText="Evaluating..."
 
-const response=await fetch("http://127.0.0.1:8000/voice/submit",{
+const response=await fetch("http://127.0.0.1:8000/dev/voice/submit",{
 
 method:"POST",
 body:form,
@@ -294,6 +302,28 @@ ${seg.start ?? 0} - ${seg.end ?? "-"} : ${seg.text}
 
 }
 
+let benchmarkHTML=""
+
+if(model.benchmark){
+
+benchmarkHTML=`
+
+<div class="benchmark">
+
+<b>Benchmark</b><br>
+
+Execution Time: ${model.benchmark.time_sec} sec<br>
+
+CPU Usage: ${model.benchmark.cpu_percent}%<br>
+
+Peak Memory: ${model.benchmark.peak_memory_mb} MB
+
+</div>
+
+`
+
+}
+
 container.innerHTML+=`
 
 <div class="card">
@@ -302,9 +332,11 @@ container.innerHTML+=`
 
 <div class="metric">Score: ${model.score}</div>
 
+${benchmarkHTML}
+
 <div class="analysis">
 <b>Analysis</b><br>
-${JSON.stringify(model.analysis, null, 2)}
+${model.analysis}
 </div>
 
 <div class="transcript">

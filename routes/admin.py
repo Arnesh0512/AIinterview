@@ -12,7 +12,7 @@ from schemas.contest import ContestCreate
 from utils.time import generate_timestamp
 from datetime import datetime, timezone
 import asyncio
-from utils.normalizer import normalize_and_rank
+from utils.normalizer import normalize_and_rank, finalize_leaderboard
 from bson import ObjectId
 import inspect
 
@@ -650,7 +650,79 @@ async def generate_hr_result(
 
 
 def generate_leaderboard(contest_id):
-    pass
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+
+    leaderboard_doc = contest_leaderboard.find_one(
+        {"contest_id": contest_obj_id},
+        {
+            "_id": 0,
+            "resume_round": 1,
+            "coding_round": 1,
+            "concept_round": 1,
+            "hr_round": 1
+        }
+    )
+
+    if not leaderboard_doc:
+        raise ValueError("No round leaderboards found")
+
+    section_outputs = []
+
+    def convert_section(section):
+
+        converted = []
+
+        for entry in section:
+
+            converted.append({
+                "candidate_id": str(entry["candidate_id"]),
+                "final_normalized_score": entry["final_normalized_score"],
+                "latest_submission": entry["latest_submission"]
+            })
+
+        return converted
+
+    if leaderboard_doc.get("resume_round"):
+        section_outputs.append(convert_section(leaderboard_doc["resume_round"]))
+
+    if leaderboard_doc.get("coding_round"):
+        section_outputs.append(convert_section(leaderboard_doc["coding_round"]))
+
+    if leaderboard_doc.get("concept_round"):
+        section_outputs.append(convert_section(leaderboard_doc["concept_round"]))
+
+    if leaderboard_doc.get("hr_round"):
+        section_outputs.append(convert_section(leaderboard_doc["hr_round"]))
+
+    if not section_outputs:
+        raise ValueError("No section leaderboards available")
+
+    final_leaderboard = finalize_leaderboard(section_outputs)
+
+    formatted = []
+
+    for entry in final_leaderboard:
+
+        formatted.append({
+            "candidate_id": ObjectId(entry["candidate_id"]),
+            "final_normalized_score": entry["final_normalized_score"],
+            "latest_submission": entry["latest_submission"],
+            "rank": entry["rank"],
+            "percentile": entry["percentile"]
+        })
+
+    contest_leaderboard.update_one(
+        {"contest_id": contest_obj_id},
+        {
+            "$set": {
+                "final_leaderboard": formatted
+            }
+        },
+        upsert=True
+    )
+
+    return formatted
 
 
 

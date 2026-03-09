@@ -1,16 +1,7 @@
 from datetime import datetime
 from collections import defaultdict
 import math
-'''
-    """ INPUT::
-    candidates_scores: List[List[Dict]]
-    [
-        [ {candidate_id, raw_score, submitted_at}, ... ],  # Q1
-        [ {candidate_id, raw_score, submitted_at}, ... ],  # Q2
-        ...
-    ]
 
-'''
 
 def normalize_and_rank(candidates_scores):
 
@@ -81,7 +72,7 @@ def normalize_and_rank(candidates_scores):
 
     for i, candidate in enumerate(leaderboard):
         if i > 0 and (
-                candidate["final_normalized_score"] == leaderboard[i - 1]["final_normalized_score"] and
+                abs(candidate["final_normalized_score"] - leaderboard[i-1]["final_normalized_score"]) < 1e-9 and
                 candidate["latest_submission"] == leaderboard[i - 1]["latest_submission"]
         ):
             candidate["rank"] = leaderboard[i - 1]["rank"]
@@ -90,9 +81,17 @@ def normalize_and_rank(candidates_scores):
         current_rank += 1
 
         # Percentile: higher rank = higher percentile
-        candidate["percentile"] = ((total_candidates - candidate["rank"] + 1) / total_candidates) * 100
+        if total_candidates == 1:
+            candidate["percentile"] = 100.0
+        else:
+            candidate["percentile"] = (
+                (total_candidates - candidate["rank"]) /
+                (total_candidates - 1)
+            ) * 100
 
     return leaderboard
+
+
 '''
 candidates_scores = [
     [  # Question 1
@@ -112,7 +111,7 @@ print(normalize_and_rank(candidates_scores))
         "final_normalized_score": 1.224744871391589,  # sum of z-scores for Q1+Q2+Q3
         "latest_submission": datetime.datetime(2026, 2, 26, 10, 25),
         "rank": 1,
-        "percentile": 33.33333333333333
+        "percentile": 100
     },
     {
         "candidate_id": "u3",
@@ -123,4 +122,97 @@ print(normalize_and_rank(candidates_scores))
     }
 ]
 
+'''
+
+
+#####################################################################################################
+
+def finalize_leaderboard(section_outputs):
+
+    cumulative = defaultdict(lambda: {
+        "final_normalized_score": 0.0,
+        "latest_submission": None
+    })
+
+    # Step 1: Accumulate final_normalized_score & track latest submission per candidate
+    for section in section_outputs:
+        for entry in section:
+            candidate_id = entry["candidate_id"]
+            cumulative[candidate_id]["final_normalized_score"] += entry["final_normalized_score"]
+
+            submitted_time = entry["latest_submission"]
+            prev_time = cumulative[candidate_id]["latest_submission"]
+
+            # Latest submission across sections (for tie-break)
+            if prev_time is None or submitted_time > prev_time:
+                cumulative[candidate_id]["latest_submission"] = submitted_time
+
+    # Step 2: Create list for ranking
+    leaderboard = []
+    for candidate_id, data in cumulative.items():
+        leaderboard.append({
+            "candidate_id": candidate_id,
+            "final_normalized_score": data["final_normalized_score"],
+            "latest_submission": data["latest_submission"]
+        })
+
+    # Step 3: Sort leaderboard
+    # Higher score first, tie-break with earlier latest_submission
+    leaderboard.sort(key=lambda x: (-x["final_normalized_score"], x["latest_submission"]))
+
+    # Step 4: Assign rank and percentile
+    total_candidates = len(leaderboard)
+    current_rank = 1
+
+    for i, candidate in enumerate(leaderboard):
+        if i > 0 and (
+                abs(candidate["final_normalized_score"] - leaderboard[i-1]["final_normalized_score"]) < 1e-9 and
+                candidate["latest_submission"] == leaderboard[i - 1]["latest_submission"]
+        ):
+            candidate["rank"] = leaderboard[i - 1]["rank"]
+        else:
+            candidate["rank"] = current_rank
+        current_rank += 1
+
+        # Percentile formula (0-100 scale)
+        if total_candidates == 1:
+            candidate["percentile"] = 100.0
+        else:
+            candidate["percentile"] = (
+                (total_candidates - candidate["rank"]) /
+                (total_candidates - 1)
+            ) * 100
+
+    return leaderboard
+
+'''
+sections = [
+    [#section 1 
+        {"candidate_id": "u1", "final_normalized_score": 1.5, "latest_submission": datetime(2026,2,26,10,15), "rank": 1, "percentile": 100},
+        {"candidate_id": "u2", "final_normalized_score": 0.5, "latest_submission": datetime(2026,2,26,10,20), "rank": 2, "percentile": 0},
+    ],
+    [#section 2
+        {"candidate_id": "u1", "final_normalized_score": 2.0, "latest_submission": datetime(2026,2,26,10,25), "rank": 1, "percentile": 100},
+        {"candidate_id": "u2", "final_normalized_score": 1.0, "latest_submission": datetime(2026,2,26,10,28), "rank": 2, "percentile": 0},
+    ]
+]
+
+print(finalize_leaderboard(sections))
+
+[
+    {
+        "candidate_id": "u1",
+        "final_normalized_score": 3.5,  # 1.5 (section1) + 2.0 (section2)
+        "latest_submission": datetime.datetime(2026, 2, 26, 10, 25),  # latest across sections
+        "rank": 1,  
+        "percentile": 100.0  
+    },
+    {
+        "candidate_id": "u2",
+        "final_normalized_score": 1.5,  # 0.5 (section1) + 1.0 (section2)
+        "latest_submission": datetime.datetime(2026, 2, 26, 10, 28),
+        "rank": 2,
+        "percentile": 0.0  
+    }
+]
 '''
