@@ -15,6 +15,8 @@ import asyncio
 from utils.normalizer import normalize_and_rank, finalize_leaderboard
 from bson import ObjectId
 import inspect
+from utils.contest import generate_coding_scores, generate_concept_scores, generate_hr_scores
+
 
 
 security = HTTPBearer()
@@ -175,6 +177,9 @@ def create_contest(
     contest_data["registered_candidates"] = []
     contest_data["candidate_count"] = 0
     contest_data["created_on"] = generate_timestamp()
+    contest_data["fake_submit_coding"] = []
+    contest_data["fake_submit_concept"] = []
+    contest_data["fake_submit_hr"] = []
 
     inserted = contest_collection.insert_one(contest_data)
 
@@ -354,12 +359,71 @@ async def generate_resume_result(
     return
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def fake_submit_candidate_coding(
+    contest_id: ObjectId,
+    contest: dict
+):
+    fake_submit_ids = contest.get("fake_submit_coding", [])
+    
+    if fake_submit_ids:
+
+        fake_contest_candidates = list(
+            contest_candidate_collection.find(
+                {
+                    "contest_id": contest_id,
+                    "candidate_id": {"$in": fake_submit_ids}
+                },
+                {
+                    "_id": 0,
+                    "candidate_id": 1,
+                    "coding": 1
+                }
+            )
+        )
+
+        for contest_candidate in fake_contest_candidates:
+            generate_coding_scores(
+                contest_id, 
+                contest_candidate["candidate_id"], 
+                contest_candidate
+            )
+
+    contest_collection.update_one(
+            {"_id": contest_id},
+            {"$set": {"fake_submit_coding": []}}
+        )
+
+
+
+
+
+
+
+
+
 @router.post("/result/coding")
 async def generate_coding_result(
     contest_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     contest, contest_obj_id = verify_contest_id(contest_id)
+    fake_submit_candidate_coding(contest_id, contest)
 
     coding_ids = contest["coding_round"]["questions"]
     contest_start = contest["coding_round"]["start"]
@@ -375,7 +439,9 @@ async def generate_coding_result(
             {
                 "_id": 0,
                 "candidate_id": 1,
-                "coding.question_bank": 1,
+                "coding.question_bank.question_id": 1,
+                "coding.question_bank.score": 1,
+                "coding.question_bank.timestamp": 1,
                 "coding.start_time": 1
             }
         )
@@ -409,7 +475,7 @@ async def generate_coding_result(
             if q["timestamp"] is None or start_time is None:
                 timestamp = datetime.max.replace(tzinfo=timezone.utc)
             else:
-                timestamp = contest_start + q["timestamp"] - start_time
+                timestamp = datetime.min + (q["timestamp"] - start_time)
 
             index = coding_ids_map[qid]
 
@@ -469,12 +535,76 @@ async def generate_coding_result(
     )
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def fake_submit_candidate_concept(
+    contest_id: ObjectId,
+    contest: dict
+):
+    fake_submit_ids = contest.get("fake_submit_concept", [])
+    
+    if fake_submit_ids:
+
+        fake_contest_candidates = list(
+            contest_candidate_collection.find(
+                {
+                    "contest_id": contest_id,
+                    "candidate_id": {"$in": fake_submit_ids}
+                },
+                {
+                    "_id": 0,
+                    "candidate_id": 1,
+                    "concept": 1
+                }
+            )
+        )
+
+        for contest_candidate in fake_contest_candidates:
+            generate_concept_scores(
+                contest_id, 
+                contest_candidate["candidate_id"], 
+                contest_candidate
+            )
+    
+    contest_collection.update_one(
+            {"_id": contest_id},
+            {"$set": {"fake_submit_concept": []}}
+        )
+
+
+
+
+
+
+
+
+
 @router.post("/result/concept")
 async def generate_concept_result(
     contest_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     contest, contest_obj_id = verify_contest_id(contest_id)
+    fake_submit_candidate_concept(contest_id, contest)
 
     concept_ids = list(contest["concept_round"]["questions"].keys())
     contest_start = contest["concept_round"]["start"]
@@ -490,7 +620,9 @@ async def generate_concept_result(
             {
                 "_id": 0,
                 "candidate_id": 1,
-                "concept.question_bank": 1,
+                "concept.question_bank.question_id": 1,
+                "concept.question_bank.score": 1,
+                "concept.question_bank.timestamp": 1,
                 "concept.start_time": 1
             }
         )
@@ -530,7 +662,7 @@ async def generate_concept_result(
             if q["timestamp"] is None or start_time is None:
                 timestamp = datetime.max.replace(tzinfo=timezone.utc)
             else:
-                timestamp = contest_start + q["timestamp"] - start_time
+                timestamp = datetime.min + (q["timestamp"] - start_time)
 
 
             index = concept_index_map[qid]
@@ -594,12 +726,76 @@ async def generate_concept_result(
     return
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def fake_submit_candidate_hr(
+    contest_id: ObjectId,
+    contest: dict
+):
+    fake_submit_ids = contest.get("fake_submit_hr", [])
+    
+    if fake_submit_ids:
+
+        fake_contest_candidates = list(
+            contest_candidate_collection.find(
+                {
+                    "contest_id": contest_id,
+                    "candidate_id": {"$in": fake_submit_ids}
+                },
+                {
+                    "_id": 0,
+                    "candidate_id": 1,
+                    "hr": 1
+                }
+            )
+        )
+
+        for contest_candidate in fake_contest_candidates:
+            generate_hr_scores(
+                contest_id, 
+                contest_candidate["candidate_id"], 
+                contest_candidate
+            )
+    
+    contest_collection.update_one(
+            {"_id": contest_id},
+            {"$set": {"fake_submit_hr": []}}
+        )
+
+
+
+
+
+
+
+
+
+
 @router.post("/result/hr")
 async def generate_hr_result(
     contest_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     contest, contest_obj_id = verify_contest_id(contest_id)
+    fake_submit_candidate_hr(contest_id, contest)
 
     hr_ids = list(contest["hr_round"]["questions"].keys())
     contest_start = contest["hr_round"]["start"]
@@ -615,7 +811,9 @@ async def generate_hr_result(
             {
                 "_id": 0,
                 "candidate_id": 1,
-                "hr.question_bank": 1,
+                "hr.question_bank.question_id": 1,
+                "hr.question_bank.score": 1,
+                "hr.question_bank.timestamp": 1,
                 "hr.start_time": 1
             }
         )
@@ -655,7 +853,7 @@ async def generate_hr_result(
             if q["timestamp"] is None or start_time is None:
                 timestamp = datetime.max.replace(tzinfo=timezone.utc)
             else:
-                timestamp = contest_start + q["timestamp"] - start_time
+                timestamp = datetime.min + (q["timestamp"] - start_time)
 
 
             index = hr_index_map[qid]
@@ -718,6 +916,33 @@ async def generate_hr_result(
     )
 
     return
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

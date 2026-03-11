@@ -427,6 +427,11 @@ def submit_coding(
 
     generate_coding_scores(contest_obj_id, candidate_id, contest_candidate)
 
+    contest_collection.update_one(
+        {"_id": contest_obj_id},
+        {"$pull": {"fake_submit_coding": candidate_id}}
+    )
+
     return {
         "success": True,
         "message": "Coding submitted successfully"
@@ -472,7 +477,6 @@ async def get_coding_questions(
         })
 
 
-    schedule_autosubmit = False
 
 
 
@@ -480,8 +484,6 @@ async def get_coding_questions(
         start_time = contest_candidate["coding"]["start_time"]
 
     else:
-        schedule_autosubmit = True
-        start_time = generate_timestamp()
 
         question_bank = [
             {
@@ -494,6 +496,12 @@ async def get_coding_questions(
             for qid in coding_ids
         ]
 
+        end_time = contest["coding_round"]["end"]
+        duration = contest["coding_round"]["duration"]
+        start_time = generate_timestamp()
+        if end_time >= start_time + timedelta(seconds=duration):
+            end_time = start_time + timedelta(seconds=duration)
+
 
 
         contest_candidate_collection.update_one(
@@ -504,14 +512,12 @@ async def get_coding_questions(
             {
                 "$set": {
                     "coding.start_time": start_time,
-                    "coding.question_bank":question_bank
+                    "coding.question_bank":question_bank,
+                    "coding.submitted_at": end_time
                 }
             }
         )
 
-
-
-    if schedule_autosubmit:
         asyncio.create_task(
             auto_submit(
                 contest_id,
@@ -528,7 +534,8 @@ async def get_coding_questions(
         "success": True,
         "questions": result,
         "duration": contest["coding_round"]["duration"],
-        "start_time": start_time
+        "start_time": start_time,
+        "contest_end_time": contest["coding_round"]["end"]
     }
 
 
@@ -577,6 +584,11 @@ def submit_coding_answer(
                 "coding.question_bank.$.score": None
             }
         }
+    )
+
+    contest_collection.update_one(
+        {"_id": contest_obj_id},
+        {"$addToSet": {"fake_submit_coding": candidate_id}}
     )
 
     return {
@@ -732,6 +744,11 @@ def submit_concept(
 
     generate_concept_scores(contest_obj_id, candidate_id, contest_candidate)
 
+    contest_collection.update_one(
+        {"_id": contest_obj_id},
+        {"$pull": {"fake_submit_concept": candidate_id}}
+    )
+
     return {
         "success": True,
         "message": "concept submitted successfully"
@@ -764,15 +781,12 @@ async def get_concept_questions(
 
     concept_questions = contest["concept_round"]["questions"]
 
-    schedule_autosubmit = False
 
 
     if contest_candidate.get("concept", {}) and contest_candidate.get("concept", {}).get("start_time"):
         start_time = contest_candidate["concept"]["start_time"]
 
     else:
-        schedule_autosubmit = True
-        start_time = generate_timestamp()
 
         question_bank = [
             {
@@ -784,6 +798,12 @@ async def get_concept_questions(
             for qid in concept_questions
         ]
 
+        end_time = contest["concept_round"]["end"]
+        duration = contest["concept_round"]["duration"]
+        start_time = generate_timestamp()
+        if end_time >= start_time + timedelta(seconds=duration):
+            end_time = start_time + timedelta(seconds=duration)
+
 
 
         contest_candidate_collection.update_one(
@@ -794,14 +814,12 @@ async def get_concept_questions(
             {
                 "$set": {
                     "concept.start_time": start_time,
-                    "concept.question_bank":question_bank
+                    "concept.question_bank":question_bank,
+                    "concept.submitted_at": end_time
                 }
             }
         )
 
-
-
-    if schedule_autosubmit:
         asyncio.create_task(
             auto_submit(
                 contest_id,
@@ -818,7 +836,8 @@ async def get_concept_questions(
         "success": True,
         "questions": concept_questions,
         "duration": contest["concept_round"]["duration"],
-        "start_time": start_time
+        "start_time": start_time,
+        "contest_end_time": contest["concept_round"]["end"]
     }
 
 
@@ -865,6 +884,11 @@ def submit_concept_answer(
                 "concept.question_bank.$.score": None
             }
         }
+    )
+
+    contest_collection.update_one(
+        {"_id": contest_obj_id},
+        {"$addToSet": {"fake_submit_concept": candidate_id}}
     )
 
     return {
@@ -1003,6 +1027,11 @@ def submit_hr(
 
     generate_hr_scores(contest_obj_id, candidate_id, contest_candidate)
 
+    contest_collection.update_one(
+        {"_id": contest_obj_id},
+        {"$pull": {"fake_submit_hr": candidate_id}}
+    )
+
     return {
         "success": True,
         "message": "hr submitted successfully"
@@ -1035,15 +1064,12 @@ async def get_hr_questions(
 
     hr_questions = contest["hr_round"]["questions"]
 
-    schedule_autosubmit = False
 
 
     if contest_candidate.get("hr", {}) and contest_candidate.get("hr", {}).get("start_time"):
         start_time = contest_candidate["hr"]["start_time"]
 
     else:
-        schedule_autosubmit = True
-        start_time = generate_timestamp()
 
         question_bank = [
             {
@@ -1057,6 +1083,11 @@ async def get_hr_questions(
             for qid in hr_questions
         ]
 
+        end_time = contest["hr_round"]["end"]
+        duration = contest["hr_round"]["duration"]
+        start_time = generate_timestamp()
+        if end_time >= start_time + timedelta(seconds=duration):
+            end_time = start_time + timedelta(seconds=duration)
 
 
         contest_candidate_collection.update_one(
@@ -1067,14 +1098,13 @@ async def get_hr_questions(
             {
                 "$set": {
                     "hr.start_time": start_time,
-                    "hr.question_bank":question_bank
+                    "hr.question_bank":question_bank,
+                    "hr.submitted_at": end_time
                 }
             }
         )
 
 
-
-    if schedule_autosubmit:
         asyncio.create_task(
             auto_submit(
                 contest_id,
@@ -1091,7 +1121,8 @@ async def get_hr_questions(
         "success": True,
         "questions": hr_questions,
         "duration": contest["hr_round"]["duration"],
-        "start_time": start_time
+        "start_time": start_time,
+        "contest_end_time": contest["hr_round"]["end"]
     }
 
 
@@ -1161,6 +1192,11 @@ async def submit_hr_answer(
                 "hr.question_bank.$.score": None
             }
         }
+    )
+
+    contest_collection.update_one(
+        {"_id": contest_obj_id},
+        {"$addToSet": {"fake_submit_hr": candidate_id}}
     )
 
     return {

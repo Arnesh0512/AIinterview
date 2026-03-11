@@ -147,7 +147,7 @@ def verify_coding_time(timestamp, contest, contest_candidate):
 
 
     start_time = contest_candidate["coding"]["start_time"]
-    end_time = min(contest["coding_round"]["end"],start_time + timedelta(seconds=contest["coding_round"]["duration"]))
+    end_time = min(contest["coding_round"]["end"],start_time + timedelta(seconds=contest["coding_round"]["duration"])) + timedelta(minutes=2)
 
     if timestamp <= start_time or timestamp >= end_time:
         raise HTTPException(
@@ -168,7 +168,7 @@ def verify_concept_time(timestamp, contest, contest_candidate):
 
 
     start_time = contest_candidate["concept"]["start_time"]
-    end_time = min(contest["concept_round"]["end"],start_time + timedelta(seconds=contest["concept_round"]["duration"]))
+    end_time = min(contest["concept_round"]["end"],start_time + timedelta(seconds=contest["concept_round"]["duration"])) + timedelta(minutes=2)
 
     if timestamp <= start_time or timestamp >= end_time:
         raise HTTPException(
@@ -189,7 +189,7 @@ def verify_hr_time(timestamp, contest, contest_candidate):
 
 
     start_time = contest_candidate["hr"]["start_time"]
-    end_time = min(contest["hr_round"]["end"],start_time + timedelta(seconds=contest["hr_round"]["duration"]))
+    end_time = min(contest["hr_round"]["end"],start_time + timedelta(seconds=contest["hr_round"]["duration"])) + timedelta(minutes=2)
 
     if timestamp <= start_time or timestamp >= end_time:
         raise HTTPException(

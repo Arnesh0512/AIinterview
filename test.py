@@ -1,46 +1,12 @@
-from pymongo import MongoClient
-from bson import ObjectId
+from datetime import datetime, timedelta
 
-# connect
-client = MongoClient("mongodb://localhost:27017")
-db = client["test_db"]
-col = db["test_col"]
+A = datetime(2026, 3, 12, 15, 30, 0)
+B = datetime(2026, 3, 12, 12, 15, 0)
 
-# clean collection
-col.delete_many({})
+delta = A - B
+print(datetime(2026,1,1,0,0,0)+delta)
 
-session_id = ObjectId()
-timestamp = "2026-03-07T18:30:00"
+result = datetime.combine(A.date(), datetime.min.time()) + delta
 
-print("Original ObjectId:", session_id)
-print("Type:", type(session_id))
-
-# Case 1: ObjectId as key
-doc1 = {
-    session_id: timestamp
-}
-
-# Case 2: string key
-doc2 = {
-    str(session_id): timestamp
-}
-
-# Case 3: f-string
-doc3 = {
-    f"{session_id}": timestamp
-}
-
-print("\nLocal Python dicts:")
-print("doc1:", doc1)
-print("doc2:", doc2)
-print("doc3:", doc3)
-
-# insert documents
-col.insert_one({"case": "objectid_key", "data": doc1})
-col.insert_one({"case": "string_key", "data": doc2})
-col.insert_one({"case": "fstring_key", "data": doc3})
-
-print("\nDocuments stored in MongoDB:\n")
-
-for d in col.find({}, {"_id": 0}):
-    print(d)
+print(result)
+print(type(delta))
