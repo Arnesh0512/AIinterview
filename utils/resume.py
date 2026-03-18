@@ -85,11 +85,11 @@ def previous_resume_session_questions(
     if x:
         sorted_sessions = sorted_sessions[:x]
         
-    if len(sorted_sessions) <= 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Need at least 2 sessions for combined feedback."
-        )
+        if len(sorted_sessions) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Need at least 2 sessions for combined feedback."
+            )
 
     for idx, s in enumerate(sorted_sessions):
         sn = s["session_number"]
@@ -130,7 +130,7 @@ async def auto_submit(
         credentials=token
     )
 
-    end_time = start_time + timedelta(seconds=duration) + timedelta(minutes=1)
+    end_time = start_time + timedelta(minutes=duration) + timedelta(minutes=1)
     now = generate_timestamp()
     wait_seconds = (end_time - now).total_seconds()
 

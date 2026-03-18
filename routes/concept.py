@@ -130,7 +130,7 @@ def submit_session(
 
 
 @router.post("/questions/new")
-def generate_questions(
+async def generate_questions(
     concept_id: str,
     num_questions: int,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -204,7 +204,7 @@ def generate_questions(
 
     asyncio.create_task(
         auto_submit(
-            concept_id=str(concept_id),
+            str(concept_id),
             question_session_id=str(question_session_id),
             token=token,
             start_time = timestamp,
@@ -312,7 +312,7 @@ def reattempt_session(
 
     asyncio.create_task(
         auto_submit(
-            concept_id=concept_id,
+            concept_id,
             question_session_id=question_session_id,
             token=token,
             start_time = timestamp,
@@ -616,7 +616,7 @@ def delete_and_reattempt(
 
     asyncio.create_task(
         auto_submit(
-            concept_id=concept_id,
+            concept_id,
             question_session_id=question_session_id,
             token=token,
             start_time = timestamp,

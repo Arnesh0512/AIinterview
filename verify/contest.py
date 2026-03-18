@@ -259,10 +259,18 @@ def verify_hr_result_time(timestamp, contest):
     if timestamp < result_time:
         raise HTTPException(
             status_code=403,
-            detail="Concept results not declared yet"
+            detail="HR results not declared yet"
         )
 
+def verify_leaderboard_declare_time(timestamp, contest):
 
+    result_time = contest["leaderboard_declare_time"]
+
+    if timestamp < result_time:
+        raise HTTPException(
+            status_code=403,
+            detail="Leaderboard not declared yet"
+        )
 
 
 

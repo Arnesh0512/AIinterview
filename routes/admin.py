@@ -10,7 +10,7 @@ import json
 from database import contest_collection
 from schemas.contest import ContestCreate
 from utils.time import generate_timestamp
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import asyncio
 from utils.normalizer import normalize_and_rank, finalize_leaderboard
 from bson import ObjectId
@@ -259,6 +259,9 @@ async def generate_resume_result(
     contest_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
 
     contest, contest_obj_id = verify_contest_id(contest_id)
 
@@ -286,7 +289,6 @@ async def generate_resume_result(
 
     # initialize question-wise container
     candidates_scores = [[] for _ in range(question_count)]
-    submitted_at = contest["resume_round"]["start"]
 
 
     for candidate in candidates:
@@ -302,7 +304,7 @@ async def generate_resume_result(
             candidates_scores[qid].append({
                 "candidate_id": str(candidate_id),
                 "raw_score": score,
-                "submitted_at": submitted_at
+                "submitted_at": datetime.min.replace(tzinfo=timezone.utc)
             })
 
     all_candidates = contest["registered_candidates"]
@@ -319,7 +321,7 @@ async def generate_resume_result(
             candidates_scores[qid].append({
                 "candidate_id": cid,
                 "raw_score": penalty_score,
-                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
+                "submitted_at": datetime.min.replace(tzinfo=timezone.utc) + timedelta(seconds=600)
             })
     
 
@@ -422,11 +424,13 @@ async def generate_coding_result(
     contest_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
     contest, contest_obj_id = verify_contest_id(contest_id)
     fake_submit_candidate_coding(contest_id, contest)
 
     coding_ids = contest["coding_round"]["questions"]
-    contest_start = contest["coding_round"]["start"]
 
     coding_ids_map = {qid: i for i, qid in enumerate(coding_ids)}
 
@@ -452,6 +456,7 @@ async def generate_coding_result(
 
     question_count = len(coding_ids)
     candidates_scores = [[] for _ in range(question_count)]
+    duration = contest["coding_round"]["duration"] * 2
 
     for candidate in candidates:
 
@@ -473,9 +478,9 @@ async def generate_coding_result(
 
 
             if q["timestamp"] is None or start_time is None:
-                timestamp = datetime.max.replace(tzinfo=timezone.utc)
+                timestamp = datetime.min.replace(tzinfo=timezone.utc) + timedelta(seconds=duration)
             else:
-                timestamp = datetime.min + (q["timestamp"] - start_time)
+                timestamp = (datetime.min + (q["timestamp"] - start_time)).replace(tzinfo=timezone.utc)
 
             index = coding_ids_map[qid]
 
@@ -500,7 +505,7 @@ async def generate_coding_result(
             candidates_scores[qid].append({
                 "candidate_id": cid,
                 "raw_score": penalty_score,
-                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
+                "submitted_at":  datetime.min.replace(tzinfo=timezone.utc) + timedelta(seconds=duration)
             })
 
     leaderboard = normalize_and_rank(candidates_scores)
@@ -603,11 +608,13 @@ async def generate_concept_result(
     contest_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
     contest, contest_obj_id = verify_contest_id(contest_id)
     fake_submit_candidate_concept(contest_id, contest)
 
     concept_ids = list(contest["concept_round"]["questions"].keys())
-    contest_start = contest["concept_round"]["start"]
     concept_index_map = {qid: i for i, qid in enumerate(concept_ids)}
 
 
@@ -635,7 +642,7 @@ async def generate_concept_result(
 
     # initialize question-wise container
     candidates_scores = [[] for _ in range(question_count)]
-    submitted_at = contest["concept_round"]["start"]
+    duration = contest["concept_round"]["duration"] * 2
 
 
     for candidate in candidates:
@@ -660,9 +667,9 @@ async def generate_concept_result(
 
 
             if q["timestamp"] is None or start_time is None:
-                timestamp = datetime.max.replace(tzinfo=timezone.utc)
+                timestamp = datetime.min.replace(tzinfo=timezone.utc) + timedelta(seconds=duration)
             else:
-                timestamp = datetime.min + (q["timestamp"] - start_time)
+                timestamp = (datetime.min + (q["timestamp"] - start_time)).replace(tzinfo=timezone.utc)
 
 
             index = concept_index_map[qid]
@@ -687,7 +694,7 @@ async def generate_concept_result(
             candidates_scores[qid].append({
                 "candidate_id": cid,
                 "raw_score": penalty_score,
-                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
+                "submitted_at": datetime.min.replace(tzinfo=timezone.utc) + timedelta(seconds=duration)
             })
 
     leaderboard = normalize_and_rank(candidates_scores)
@@ -794,6 +801,9 @@ async def generate_hr_result(
     contest_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
     contest, contest_obj_id = verify_contest_id(contest_id)
     fake_submit_candidate_hr(contest_id, contest)
 
@@ -826,7 +836,7 @@ async def generate_hr_result(
 
     # initialize question-wise container
     candidates_scores = [[] for _ in range(question_count)]
-    submitted_at = contest["hr_round"]["start"]
+    duration = contest["hr_round"]["duration"] * 2
 
 
     for candidate in candidates:
@@ -851,9 +861,9 @@ async def generate_hr_result(
 
 
             if q["timestamp"] is None or start_time is None:
-                timestamp = datetime.max.replace(tzinfo=timezone.utc)
+                timestamp = datetime.min.replace(tzinfo=timezone.utc) + timedelta(seconds=duration)
             else:
-                timestamp = datetime.min + (q["timestamp"] - start_time)
+                timestamp = (datetime.min + (q["timestamp"] - start_time)).replace(tzinfo=timezone.utc)
 
 
             index = hr_index_map[qid]
@@ -879,7 +889,7 @@ async def generate_hr_result(
             candidates_scores[qid].append({
                 "candidate_id": cid,
                 "raw_score": penalty_score,
-                "submitted_at": datetime.max.replace(tzinfo=timezone.utc)
+                "submitted_at": datetime.min.replace(tzinfo=timezone.utc) + timedelta(seconds=duration)
             })
 
     leaderboard = normalize_and_rank(candidates_scores)
@@ -941,14 +951,14 @@ async def generate_hr_result(
 
 
 
-
-
-
-
-
-
-def generate_leaderboard(contest_id):
-
+@router.post("/result/leaderboard")
+async def generate_leaderboard(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
     contest, contest_obj_id = verify_contest_id(contest_id)
 
     leaderboard_doc = contest_leaderboard.find_one(
@@ -966,17 +976,21 @@ def generate_leaderboard(contest_id):
         raise ValueError("No round leaderboards found")
 
     section_outputs = []
+    timeMap = {}
 
     def convert_section(section):
 
         converted = []
 
         for entry in section:
-
+            
+            cid = str(entry["candidate_id"])
+            diff = entry["latest_submission"].replace(tzinfo=timezone.utc) - datetime.min.replace(tzinfo=timezone.utc)
+            timeMap[cid] = timeMap.get(cid, timedelta()) + diff
             converted.append({
-                "candidate_id": str(entry["candidate_id"]),
+                "candidate_id": cid,
                 "final_normalized_score": entry["final_normalized_score"],
-                "latest_submission": entry["latest_submission"]
+                "latest_submission": timeMap[cid]
             })
 
         return converted
@@ -1010,17 +1024,25 @@ def generate_leaderboard(contest_id):
             "percentile": entry["percentile"]
         })
 
+    x = contest.get("selected_hr", 0)
+
+    selected_candidates = [
+        entry["candidate_id"]
+        for entry in formatted[:x]
+    ]
+
     contest_leaderboard.update_one(
         {"contest_id": contest_obj_id},
         {
             "$set": {
-                "final_leaderboard": formatted
+                "final_leaderboard": formatted,
+                "selected_candidates": selected_candidates
             }
         },
         upsert=True
     )
 
-    return formatted
+    return
 
 
 

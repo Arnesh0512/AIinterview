@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from utils.resume import previous_resume_session_questions, auto_submit
 from utils.time import generate_timestamp
 import asyncio
+from fastapi import BackgroundTasks
 
 router = APIRouter(
     prefix="/resume",
@@ -192,9 +193,10 @@ def submit_session(
 
 
 @router.post("/questions/new")
-def generate_questions(
+async def generate_questions(
     resume_id: str,
     num_questions: int,
+    background_tasks: BackgroundTasks,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
 
@@ -263,7 +265,7 @@ def generate_questions(
 
     asyncio.create_task(
         auto_submit(
-            concept_id=str(resume_id),
+            str(resume_id),
             question_session_id=str(question_session_id),
             token=token,
             start_time = timestamp,
@@ -383,7 +385,7 @@ def reattempt_session(
 
     asyncio.create_task(
         auto_submit(
-            concept_id=resume_id,
+            resume_id,
             question_session_id=question_session_id,
             token=token,
             start_time = timestamp,
@@ -696,7 +698,7 @@ def delete_and_reattempt(
 
     asyncio.create_task(
         auto_submit(
-            concept_id=resume_id,
+            resume_id,
             question_session_id=question_session_id,
             token=token,
             start_time = timestamp,

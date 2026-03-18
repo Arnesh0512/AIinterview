@@ -66,11 +66,11 @@ def previous_coding_session_questions(
 
     if x:
         sessions = sessions[:x]
-    if len(sessions) <= 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Need at least 2 sessions for combined feedback."
-        )
+        if len(sessions) <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Need at least 2 sessions for combined feedback."
+            )
 
 
     question_ids = set()
@@ -148,7 +148,7 @@ async def auto_submit(
         credentials=token
     )
 
-    end_time = start_time + timedelta(seconds=duration) + timedelta(minutes=1)
+    end_time = start_time + timedelta(minutes=duration) + timedelta(minutes=1)
     now = generate_timestamp()
     wait_seconds = (end_time - now).total_seconds()
 

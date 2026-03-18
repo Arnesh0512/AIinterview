@@ -117,7 +117,7 @@ def verify_session_status2(session_doc: dict):
 
 def verify_session_time(session_doc: dict, session_obj_id: ObjectId):
 
-    start_time = session_doc["timestamp"]
+    start_time = session_doc["timestamp"].replace(tzinfo=timezone.utc)
     total_time = session_doc["time"]
 
     now = generate_timestamp()

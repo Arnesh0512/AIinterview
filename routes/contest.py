@@ -18,6 +18,7 @@ from utils.contest import auto_submit, generate_coding_scores, generate_concept_
 import asyncio
 from verify.contest import verify_concept_time_open, verify_concept_question, verify_concept_time, verify_concept_result_time, verify_concept_submit, verify_candidate_passed_concept
 from verify.contest import verify_hr_time_open, verify_hr_question, verify_hr_time, verify_hr_submit, verify_hr_result_time
+from verify.contest import verify_leaderboard_declare_time
 import tempfile
 from database import contest_audio_fs
 from model import call_audio_model_1
@@ -1283,3 +1284,66 @@ def get_hr_leaderboard(
 
 
 
+@router.get("/leaderboard/final")
+def get_final_leaderboard(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, real_candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+
+    timestamp = generate_timestamp()
+    verify_leaderboard_declare_time(timestamp, contest)
+
+
+    leaderboard_doc = contest_leaderboard.find_one(
+        {"contest_id": contest_obj_id},
+        {"final_leaderboard": 1, "_id": 0, "selected_candidates":1}
+    )
+
+    if not leaderboard_doc:
+        raise HTTPException(status_code=404, detail="Leaderboard not generated")
+
+    leaderboard = leaderboard_doc["final_leaderboard"]
+    candidate_ids = [entry["candidate_id"] for entry in leaderboard]
+
+
+    candidates = list(
+        candidate_collection.find(
+            {"_id": {"$in": candidate_ids}},
+            {"_id": 1, "full_name": 1}
+        )
+    )
+    name_map = {
+        c["_id"]: c["full_name"]
+        for c in candidates
+    }
+
+    result = []
+    for entry in leaderboard:
+        result.append({
+            "candidate_id": str(real_candidate_id) if real_candidate_id == entry["candidate_id"] else None,
+            "name": name_map.get(entry["candidate_id"], "Unknown"),
+            "rank": entry["rank"],
+            "percentile": entry["percentile"],
+            "score": entry["final_normalized_score"],
+            "latest_submission": entry["latest_submission"]
+        })
+
+    if real_candidate_id in leaderboard_doc["selected_candidates"]:
+        selection = True
+    else:
+        selection = False
+
+
+
+    return {
+        "success": True,
+        "data": result,
+        "selection": selection
+    }

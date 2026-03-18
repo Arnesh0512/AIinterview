@@ -1,12 +1,31 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
+from pymongo import MongoClient
 
-A = datetime(2026, 3, 12, 15, 30, 0)
-B = datetime(2026, 3, 12, 12, 15, 0)
+# connect to MongoDB
+client = MongoClient("mongodb://localhost:27017/")
+db = client["test_db"]
+collection = db["datetime_test"]
 
-delta = A - B
-print(datetime(2026,1,1,0,0,0)+delta)
+collection.delete_many({})  # clean collection
 
-result = datetime.combine(A.date(), datetime.min.time()) + delta
+# datetime.max in UTC
+dt_max = datetime.max.replace(tzinfo=timezone.utc)
 
-print(result)
-print(type(delta))
+# insert
+collection.insert_one({
+    "time": dt_max
+})
+
+print("Inserted:", dt_max)
+
+# retrieve
+doc = collection.find_one({})
+retrieved_time = doc["time"]
+
+print("Retrieved:", retrieved_time)
+
+# convert retrieved to UTC aware (Mongo returns naive UTC)
+retrieved_time = retrieved_time.replace(tzinfo=timezone.utc)
+
+# compare
+print("Equal to datetime.max ?", retrieved_time == dt_max)
