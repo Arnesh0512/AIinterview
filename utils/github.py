@@ -56,7 +56,7 @@ def fetch_repo_details(selected_repo_link):
 
     repo_data = repo_response.json()
     repo_name = repo_data.get("name")
-    repo_description = repo_data.get("description")
+    repo_description = repo_data.get("description") or ""
     languages_url = repo_data.get("languages_url")
 
 
@@ -68,11 +68,17 @@ def fetch_repo_details(selected_repo_link):
 
     readme_url = f"https://api.github.com/repos/{owner}/{repo_name}/readme"
     readme_response = requests.get(readme_url, headers=get_headers())
-    readme_content = None
+    decoded_readme = ""
     if readme_response.status_code == 200:
         readme_content = readme_response.json().get("content", "")
         decoded_bytes = base64.b64decode(readme_content)
         decoded_readme = decoded_bytes.decode("utf-8")
+
+    if not (repo_description or decoded_readme):
+        raise HTTPException(
+            status_code=400,
+            detail="Repository contains insufficient analyzable content."
+        )
 
     if not (repo_description.strip() or decoded_readme.strip()):
         raise HTTPException(

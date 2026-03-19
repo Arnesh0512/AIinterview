@@ -7,7 +7,7 @@ from openai import OpenAI
 from database import audio_interview_collection, audio_fs
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
-from utils.reader import OPENAP_API_KEY
+from utils.reader import OPENAI_API_KEY
 
 import tempfile
 import os
@@ -95,7 +95,7 @@ def generate_token(email: str):
 
 
 
-client = OpenAI(api_key=OPENAP_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 process = psutil.Process(os.getpid())
 

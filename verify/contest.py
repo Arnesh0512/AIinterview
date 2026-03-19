@@ -1,6 +1,7 @@
 from database import contest_collection, contest_leaderboard, contest_candidate_collection
 from fastapi import HTTPException
 from bson import ObjectId
+from bson.errors import InvalidId
 from utils.time import generate_timestamp
 from datetime import timezone, timedelta
 
@@ -8,7 +9,7 @@ def verify_contest_id(contest_id: str):
 
     try:
         obj_id = ObjectId(contest_id)
-    except:
+    except InvalidId:
         raise HTTPException(
             status_code=400,
             detail="Invalid contest_id"
@@ -147,7 +148,7 @@ def verify_coding_time(timestamp, contest, contest_candidate):
 
 
     start_time = contest_candidate["coding"]["start_time"]
-    end_time = min(contest["coding_round"]["end"],start_time + timedelta(seconds=contest["coding_round"]["duration"])) + timedelta(minutes=2)
+    end_time = contest_candidate["coding"]["end_time"]
 
     if timestamp <= start_time or timestamp >= end_time:
         raise HTTPException(
@@ -168,7 +169,7 @@ def verify_concept_time(timestamp, contest, contest_candidate):
 
 
     start_time = contest_candidate["concept"]["start_time"]
-    end_time = min(contest["concept_round"]["end"],start_time + timedelta(seconds=contest["concept_round"]["duration"])) + timedelta(minutes=2)
+    end_time = contest_candidate["concept"]["end_time"]
 
     if timestamp <= start_time or timestamp >= end_time:
         raise HTTPException(
@@ -189,7 +190,7 @@ def verify_hr_time(timestamp, contest, contest_candidate):
 
 
     start_time = contest_candidate["hr"]["start_time"]
-    end_time = min(contest["hr_round"]["end"],start_time + timedelta(seconds=contest["hr_round"]["duration"])) + timedelta(minutes=2)
+    end_time = contest_candidate["hr"]["end_time"]
 
     if timestamp <= start_time or timestamp >= end_time:
         raise HTTPException(
@@ -337,16 +338,24 @@ def verify_candidate_passed_concept(candidate_id, contest_id):
 
 
 def verify_coding_question(contest, question_id):
-
     coding_ids = contest["coding_round"]["questions"]
 
-    if ObjectId(question_id) not in coding_ids:
+    try:
+        question_obj_id = ObjectId(question_id)
+    except InvalidId:
         raise HTTPException(
             status_code=400,
             detail="Invalid coding question id"
         )
-    
-    return ObjectId(question_id)
+
+    if question_obj_id not in coding_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid coding question id"
+        )
+
+    return question_obj_id
+
 
 
 def verify_concept_question(contest, question_id):

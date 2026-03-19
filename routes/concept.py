@@ -313,7 +313,7 @@ def reattempt_session(
     asyncio.create_task(
         auto_submit(
             concept_id,
-            question_session_id=question_session_id,
+            question_session_id=str(new_session_id),
             token=token,
             start_time = timestamp,
             duration = old_session_doc["time"],

@@ -6,7 +6,6 @@ from verify.token import verify_access_token
 from verify.admin import verify_admin_payload, validate_contest_data, verify_contest_id, verify_duplicate_contest
 from prompt.admin import validate_role_skills, generate_resume_questions, generate_concept_questions, generate_hr_questions
 from utils.admin import generate_coding_ids
-import json
 from database import contest_collection
 from schemas.contest import ContestCreate
 from utils.time import generate_timestamp
@@ -283,7 +282,8 @@ async def generate_resume_result(
     )
 
     if not candidates:
-        raise ValueError("No resumes submitted for this contest")
+        raise HTTPException(status_code=404, detail="No resumes submitted for this contest")
+
 
     question_count = contest["resume_questions_count"]
 
@@ -406,6 +406,18 @@ def fake_submit_candidate_coding(
                 contest_candidate
             )
 
+            contest_candidate_collection.update_one(
+                {
+                    "contest_id": contest_id,
+                    "candidate_id": contest_candidate["candidate_id"]
+                },
+                {
+                    "$set": {
+                        "coding.submitted_at": contest_candidate["coding"]["end_time"]
+                    }
+                }
+            )
+
     contest_collection.update_one(
             {"_id": contest_id},
             {"$set": {"fake_submit_coding": []}}
@@ -428,7 +440,7 @@ async def generate_coding_result(
     payload = verify_access_token(token)
     admin, admin_id, email = verify_admin_payload(payload)
     contest, contest_obj_id = verify_contest_id(contest_id)
-    fake_submit_candidate_coding(contest_id, contest)
+    fake_submit_candidate_coding(contest_obj_id, contest)
 
     coding_ids = contest["coding_round"]["questions"]
 
@@ -452,7 +464,8 @@ async def generate_coding_result(
     )
 
     if not candidates:
-        raise ValueError("No codings submitted for this contest")
+        raise HTTPException(status_code=404, detail="No codings submitted for this contest")
+
 
     question_count = len(coding_ids)
     candidates_scores = [[] for _ in range(question_count)]
@@ -589,6 +602,18 @@ def fake_submit_candidate_concept(
                 contest_candidate["candidate_id"], 
                 contest_candidate
             )
+
+            contest_candidate_collection.update_one(
+                {
+                    "contest_id": contest_id,
+                    "candidate_id": contest_candidate["candidate_id"]
+                },
+                {
+                    "$set": {
+                        "concept.submitted_at": contest_candidate["concept"]["end_time"]
+                    }
+                }
+            )
     
     contest_collection.update_one(
             {"_id": contest_id},
@@ -612,7 +637,7 @@ async def generate_concept_result(
     payload = verify_access_token(token)
     admin, admin_id, email = verify_admin_payload(payload)
     contest, contest_obj_id = verify_contest_id(contest_id)
-    fake_submit_candidate_concept(contest_id, contest)
+    fake_submit_candidate_concept(contest_obj_id, contest)
 
     concept_ids = list(contest["concept_round"]["questions"].keys())
     concept_index_map = {qid: i for i, qid in enumerate(concept_ids)}
@@ -636,7 +661,8 @@ async def generate_concept_result(
     )
 
     if not candidates:
-        raise ValueError("No concepts submitted for this contest")
+        raise HTTPException(status_code=404, detail="No concepts submitted for this contest")
+
 
     question_count = len(concept_ids)
 
@@ -781,6 +807,18 @@ def fake_submit_candidate_hr(
                 contest_candidate["candidate_id"], 
                 contest_candidate
             )
+
+            contest_candidate_collection.update_one(
+                {
+                    "contest_id": contest_id,
+                    "candidate_id": contest_candidate["candidate_id"]
+                },
+                {
+                    "$set": {
+                        "hr.submitted_at": contest_candidate["hr"]["end_time"]
+                    }
+                }
+            )
     
     contest_collection.update_one(
             {"_id": contest_id},
@@ -805,10 +843,9 @@ async def generate_hr_result(
     payload = verify_access_token(token)
     admin, admin_id, email = verify_admin_payload(payload)
     contest, contest_obj_id = verify_contest_id(contest_id)
-    fake_submit_candidate_hr(contest_id, contest)
+    fake_submit_candidate_hr(contest_obj_id, contest)
 
     hr_ids = list(contest["hr_round"]["questions"].keys())
-    contest_start = contest["hr_round"]["start"]
     hr_index_map = {qid: i for i, qid in enumerate(hr_ids)}
 
 
@@ -830,7 +867,8 @@ async def generate_hr_result(
     )
 
     if not candidates:
-        raise ValueError("No hrs submitted for this contest")
+        raise HTTPException(status_code=404, detail="No HR submissions found for this contest")
+
 
     question_count = len(hr_ids)
 
@@ -973,7 +1011,7 @@ async def generate_leaderboard(
     )
 
     if not leaderboard_doc:
-        raise ValueError("No round leaderboards found")
+        raise HTTPException(status_code=404, detail="No round leaderboards found")
 
     section_outputs = []
     timeMap = {}
@@ -1008,7 +1046,8 @@ async def generate_leaderboard(
         section_outputs.append(convert_section(leaderboard_doc["hr_round"]))
 
     if not section_outputs:
-        raise ValueError("No section leaderboards available")
+        raise HTTPException(status_code=404, detail="No section leaderboards available")
+
 
     final_leaderboard = finalize_leaderboard(section_outputs)
 
@@ -1128,7 +1167,7 @@ async def start_contest(
 
     contest, contest_obj_id = verify_contest_id(contest_id)
 
-    asyncio.create_task(run_contest_scheduler(contest))
+    asyncio.create_task(run_contest_scheduler(contest, token))
 
     return {
         "success": True,

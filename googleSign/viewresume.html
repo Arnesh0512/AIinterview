@@ -1,0 +1,56 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+<title>Resume Viewer</title>
+</head>
+
+<body>
+
+<h2>Resume Viewer</h2>
+
+<label>File ID</label><br>
+<input type="text" id="fileId"><br><br>
+
+<label>JWT Token</label><br>
+<textarea id="jwt" rows="4" cols="60"></textarea><br><br>
+
+<button onclick="loadResume()">Load Resume</button>
+
+<hr>
+
+<iframe id="viewer" width="100%" height="700"></iframe>
+
+<script>
+
+async function loadResume(){
+
+    const fileId = document.getElementById("fileId").value
+    const jwt = document.getElementById("jwt").value
+
+    const response = await fetch(
+        `http://localhost:8000/resume/file?file_id=${fileId}`,
+        {
+            method: "GET",
+            headers: {
+                "Authorization": "Bearer " + jwt
+            }
+        }
+    )
+
+    if(!response.ok){
+        alert("Failed to load PDF")
+        return
+    }
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+
+    document.getElementById("viewer").src = url
+}
+
+</script>
+
+</body>
+</html>
+```

@@ -341,7 +341,7 @@ def reattempt_session(
     asyncio.create_task(
         auto_submit(
             github_id,
-            question_session_id=question_session_id,
+            question_session_id=str(new_session_id),
             token=token,
             start_time = timestamp,
             duration = old_session_doc["time"],

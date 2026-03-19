@@ -26,7 +26,7 @@ concept_collection = db["concept"]
 concept_question_collection = db["concept_question_session"]
 
 contest_collection = db["contest"]
-contest_candidate_collection = db["candidate_reponse"]
+contest_candidate_collection = db["candidate_response"]
 contest_resume_fs = gridfs.GridFS(db, collection="contest_resume")
 contest_audio_fs = gridfs.GridFS(db, collection="contest_audio")
 contest_leaderboard = db["contest_leaderboard"]

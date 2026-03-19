@@ -203,17 +203,12 @@ async def generate_questions(
 
     questions_cursor = leetcode.aggregate(pipeline)
     questions_list = list(questions_cursor)
-    available_count = len(questions_list)
 
 
-    if available_count == 0:
-        return {
-           "success":False,
-           "message":"No questions available"
-        }
+
 
     question_bank = []
-    time = available_count * 60
+    time = num_questions * 60
 
     for q in questions_list:
         question_bank.append({
@@ -240,12 +235,15 @@ async def generate_questions(
     inserted = coding_question_collection.insert_one(session_doc)
     question_session_id = inserted.inserted_id
 
-
+    new_available_count = coding["available_ques"] - num_questions
     coding_collection.update_one(
         {"_id": coding_id},
         {
             "$inc": {
                 "total_sessions": 1
+            },
+            "$set": {
+                "available_ques": new_available_count
             }
         }
     )
@@ -387,7 +385,7 @@ def reattempt_session(
     asyncio.create_task(
         auto_submit(
             coding_id,
-            question_session_id=question_session_id,
+            question_session_id=str(new_session_id),
             token=token,
             start_time = timestamp,
             duration = old_session_doc["time"],

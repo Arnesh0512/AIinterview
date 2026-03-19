@@ -212,8 +212,8 @@ def validate_contest_data(data: ContestCreate):
 
     if not (
         last_date_to_register < 
-        resume_start < resume_end < resume_result_time <
-        contest_start < 
+        resume_start < resume_end < 
+        contest_start < resume_result_time <
         coding_start < coding_end < coding_result_time <
         concept_start < concept_end < concept_result_time <
         hr_start < hr_end < hr_result_time <
@@ -292,7 +292,7 @@ def verify_contest_id(contest_id: str):
 
     try:
         obj_id = ObjectId(contest_id)
-    except:
+    except InvalidId:
         raise HTTPException(
             status_code=400,
             detail="Invalid contest_id"

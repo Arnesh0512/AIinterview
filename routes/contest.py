@@ -12,7 +12,6 @@ from utils.resume import extract_text_with_ocr, extract_text_without_ocr
 from prompt.contest import evaluate_resume_score, generate_summary
 from database import contest_collection, contest_candidate_collection, contest_resume_fs, contest_audio_fs,contest_leaderboard, candidate_collection, leetcode
 from datetime import datetime, timezone, timedelta
-from bson import ObjectId
 from verify.contest import verify_resume_result_time,verify_coding_result_time, verify_candidate_passed_resume, verify_coding_question, verify_coding_time, verify_candidate_passed_coding
 from utils.contest import auto_submit, generate_coding_scores, generate_concept_scores, generate_hr_scores
 import asyncio
@@ -20,7 +19,6 @@ from verify.contest import verify_concept_time_open, verify_concept_question, ve
 from verify.contest import verify_hr_time_open, verify_hr_question, verify_hr_time, verify_hr_submit, verify_hr_result_time
 from verify.contest import verify_leaderboard_declare_time
 import tempfile
-from database import contest_audio_fs
 from model import call_audio_model_1
 
 
@@ -271,6 +269,8 @@ async def submit_resume_for_contest(
                 content_type="application/pdf"
             )
 
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -502,6 +502,7 @@ async def get_coding_questions(
         start_time = generate_timestamp()
         if end_time >= start_time + timedelta(seconds=duration):
             end_time = start_time + timedelta(seconds=duration)
+        end_time = end_time + timedelta(minutes = 1)
 
 
 
@@ -514,7 +515,8 @@ async def get_coding_questions(
                 "$set": {
                     "coding.start_time": start_time,
                     "coding.question_bank":question_bank,
-                    "coding.submitted_at": end_time
+                    "coding.end_time": end_time,
+                    "coding.submitted_at": None
                 }
             }
         )
@@ -523,9 +525,7 @@ async def get_coding_questions(
             auto_submit(
                 contest_id,
                 token,
-                start_time,
-                contest["coding_round"]["end"],
-                contest["coding_round"]["duration"],
+                end_time,
                 submit_coding
             )
         )
@@ -536,7 +536,7 @@ async def get_coding_questions(
         "questions": result,
         "duration": contest["coding_round"]["duration"],
         "start_time": start_time,
-        "contest_end_time": contest["coding_round"]["end"]
+        "end_time": end_time
     }
 
 
@@ -804,6 +804,7 @@ async def get_concept_questions(
         start_time = generate_timestamp()
         if end_time >= start_time + timedelta(seconds=duration):
             end_time = start_time + timedelta(seconds=duration)
+        end_time = end_time + timedelta(minutes = 1)
 
 
 
@@ -816,7 +817,8 @@ async def get_concept_questions(
                 "$set": {
                     "concept.start_time": start_time,
                     "concept.question_bank":question_bank,
-                    "concept.submitted_at": end_time
+                    "concept.end_time": end_time,
+                    "concept.submitted_at": None
                 }
             }
         )
@@ -825,10 +827,8 @@ async def get_concept_questions(
             auto_submit(
                 contest_id,
                 token,
-                start_time,
-                contest["concept_round"]["end"],
-                contest["concept_round"]["duration"],
-                submit_concept
+                end_time,
+                submit_coding
             )
         )
 
@@ -838,7 +838,7 @@ async def get_concept_questions(
         "questions": concept_questions,
         "duration": contest["concept_round"]["duration"],
         "start_time": start_time,
-        "contest_end_time": contest["concept_round"]["end"]
+        "end_time": end_time
     }
 
 
@@ -1089,6 +1089,7 @@ async def get_hr_questions(
         start_time = generate_timestamp()
         if end_time >= start_time + timedelta(seconds=duration):
             end_time = start_time + timedelta(seconds=duration)
+        end_time = end_time + timedelta(minutes = 1)
 
 
         contest_candidate_collection.update_one(
@@ -1100,7 +1101,8 @@ async def get_hr_questions(
                 "$set": {
                     "hr.start_time": start_time,
                     "hr.question_bank":question_bank,
-                    "hr.submitted_at": end_time
+                    "hr.end_time": end_time,
+                    "hr.submitted_at": None
                 }
             }
         )
@@ -1110,10 +1112,8 @@ async def get_hr_questions(
             auto_submit(
                 contest_id,
                 token,
-                start_time,
-                contest["hr_round"]["end"],
-                contest["hr_round"]["duration"],
-                submit_hr
+                end_time,
+                submit_coding
             )
         )
 
@@ -1123,7 +1123,7 @@ async def get_hr_questions(
         "questions": hr_questions,
         "duration": contest["hr_round"]["duration"],
         "start_time": start_time,
-        "contest_end_time": contest["hr_round"]["end"]
+        "end_time": end_time
     }
 
 
@@ -1163,20 +1163,23 @@ async def submit_hr_answer(
         )
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-
         audio_bytes = await audio.read()
         temp_audio.write(audio_bytes)
-
         temp_audio_path = temp_audio.name
 
-    segmented_data , transcript = call_audio_model_1(temp_audio_path)
+    try:
+        segmented_data, transcript = call_audio_model_1(temp_audio_path)
 
-    with open(temp_audio_path, "rb") as f:
-        audio_file_id = contest_audio_fs.put(
-            f,
-            filename=audio.filename,
-            content_type=audio.content_type
-        )
+        with open(temp_audio_path, "rb") as f:
+            audio_file_id = contest_audio_fs.put(
+                f,
+                filename=audio.filename,
+                content_type=audio.content_type
+            )
+    finally:
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+
 
     contest_candidate_collection.update_one(
         {

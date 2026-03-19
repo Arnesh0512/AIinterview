@@ -4,7 +4,11 @@ from fastapi import HTTPException
 from model import call_chatgpt
 
 
-def generate_concept_topic_questions(topics: List[str], num_questions: int):
+def generate_concept_topic_questions(
+    topics: List[str],
+    num_questions: int,
+    previous_sessions: list
+):
 
     prompt = f"""
     You are a senior computer science technical interviewer.
@@ -12,6 +16,36 @@ def generate_concept_topic_questions(topics: List[str], num_questions: int):
     Based on the given CS topics, generate {num_questions} 
     deep technical interview questions.
 
+    Previous Sessions are provided as a dictionary in the following format:
+
+    {{
+        "session_1": {{
+            "Question text 1": "Answer text 1",
+            "Question text 2": "Answer text 2"
+        }},
+        "session_2": {{
+            ...
+        }}
+    }}
+    - If Previous Sessions is an empty dictionary ({{}}):
+    → This means this is the FIRST interview round.
+
+    - If Previous Sessions contains data:
+    → session_1 is the most recent session.
+    → Higher session numbers represent older sessions.
+    → Each key inside a session is a question and its value is the candidate’s answer.
+    → You must:
+        - Avoid repeating previous questions
+        - Identify weak or shallow answers
+        - Identify strong architectural understanding
+        - Identify untouched components of the topic.
+        - Increase overall difficulty progressively
+        - Focus more on:
+                * Weak explanations
+                * Theory gaps
+                * Edge cases not discussed
+                * Indepth topic-level reasoning
+                
     Questions should test:
     - Core conceptual understanding
     - Internal working
@@ -21,13 +55,15 @@ def generate_concept_topic_questions(topics: List[str], num_questions: int):
     - Edge cases
     - Real-world application
 
-    Rules:
-    - Questions must strictly relate to the provided topics
-    - Do NOT generate generic questions
-    - Each question must be standalone
-    - Do NOT combine multiple questions into one
-    - Encourage deep explanation
-    - Return strictly valid JSON
+    Question Generation Rules:
+    - Generate exactly {num_questions} questions.
+    - Each list item must contain ONLY ONE question.
+    - Do NOT combine multiple questions into one.
+    - Ensure increasing difficulty order within this round.
+    - Questions must be highly specific to the repository.
+    - Do NOT mention previous sessions explicitly in the question text.
+    - Do NOT provide answers.
+    - Do NOT add explanations.
 
     Output format:
 
@@ -39,6 +75,9 @@ def generate_concept_topic_questions(topics: List[str], num_questions: int):
     content = f"""
     CS Topics:
     {", ".join(topics)}
+
+    Previous Sessions:
+    {json.dumps(previous_sessions, indent=2)}
     """
 
     response_format = {

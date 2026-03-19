@@ -118,12 +118,15 @@ def get_all_resume_ids(
 
 @router.get("/file")
 def get_resume_file(
-    file_id: str,
+    resume_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     token = credentials.credentials
     payload = verify_access_token(token)
     candidate, candidate_id, email = verify_candidate_payload(payload)
+    resume_doc, resume_obj_id = verify_resume(resume_id, candidate_id)
+
+    file_id = resume_doc["file_id"]
 
     file_obj_id = verify_file_id(file_id)
 
@@ -386,7 +389,7 @@ def reattempt_session(
     asyncio.create_task(
         auto_submit(
             resume_id,
-            question_session_id=question_session_id,
+            question_session_id=str(new_session_id),
             token=token,
             start_time = timestamp,
             duration = old_session_doc["time"],

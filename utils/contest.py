@@ -13,9 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 async def auto_submit(
     contest_id: str,
     token: str,
-    start_time: datetime,
     end_time: datetime,
-    duration: int,
     fun: Union[
     Callable[[str, datetime, HTTPAuthorizationCredentials], None],
     Callable[[str, datetime, HTTPAuthorizationCredentials], Awaitable[None]]
@@ -26,21 +24,17 @@ async def auto_submit(
         credentials=token
     )
 
-    if end_time >= start_time + timedelta(seconds=duration):
-        end_time = start_time + timedelta(seconds=duration)
-
-    target_time = end_time + timedelta(minutes=1)
 
     now = generate_timestamp()
-    wait_seconds = (target_time - now).total_seconds()
+    wait_seconds = (end_time - now).total_seconds()
 
     if wait_seconds > 0:
         await asyncio.sleep(wait_seconds)
 
     if inspect.iscoroutinefunction(fun):
-        await fun(contest_id, generate_timestamp(), credentials)
+        await fun(contest_id, end_time, credentials)
     else:
-        fun(contest_id, generate_timestamp(), credentials)
+        fun(contest_id, end_time, credentials)
 
 
 
