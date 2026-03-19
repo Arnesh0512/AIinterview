@@ -283,7 +283,7 @@ async def generate_questions(
 def save_answer(
     coding_id: str,
     question_session_id: str,
-    question_id: int,
+    question_id: str,
     language: LanguageEnum ,
     answer: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)

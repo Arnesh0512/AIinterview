@@ -81,7 +81,7 @@ def verify_question_session(
 
 def verify_question_id(
     session_doc: dict,
-    question_id: int
+    question_id: str
 ):
     question_bank = session_doc.get("question_bank", [])
 

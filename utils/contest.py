@@ -52,15 +52,16 @@ def generate_coding_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, con
 
     questions = list(
         leetcode.find(
-            {"_id": {"$in": question_ids}},
-            {"_id": 1, "problem_description": 1}
+            {"question_id": {"$in": question_ids}},
+            {"question_id": 1, "problem_description": 1, "_id": 0}
         )
     )
 
     question_map = {
-        q["_id"]: q["problem_description"]
+        q["question_id"]: q["problem_description"]
         for q in questions
     }
+
 
     evaluation_input = []
 
@@ -81,12 +82,12 @@ def generate_coding_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, con
     overall_feedback = response["overall_feedback"]
 
     score_map = {
-        ObjectId(s["question_id"]): s["score"]
+        s["question_id"]: s["score"]
         for s in results
     }
 
     feedback_map = {
-        ObjectId(f["question_id"]): f["feedback"]
+        f["question_id"]: f["feedback"]
         for f in results
     }
 

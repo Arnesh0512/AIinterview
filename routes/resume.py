@@ -128,9 +128,7 @@ def get_resume_file(
 
     file_id = resume_doc["file_id"]
 
-    file_obj_id = verify_file_id(file_id)
-
-    grid_out = resume_fs.get(file_obj_id)
+    grid_out = resume_fs.get(file_id)
 
     return StreamingResponse(
         grid_out,

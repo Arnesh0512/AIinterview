@@ -338,23 +338,15 @@ def verify_candidate_passed_concept(candidate_id, contest_id):
 
 
 def verify_coding_question(contest, question_id):
-    coding_ids = contest["coding_round"]["questions"]
+    question_ids = contest["coding_round"]["questions"]
 
-    try:
-        question_obj_id = ObjectId(question_id)
-    except InvalidId:
+
+    if question_id not in question_ids:
         raise HTTPException(
             status_code=400,
             detail="Invalid coding question id"
         )
 
-    if question_obj_id not in coding_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid coding question id"
-        )
-
-    return question_obj_id
 
 
 
@@ -438,3 +430,118 @@ def verify_hr_submit(contest_candidate):
         
 
     
+def verify_contest_end_time(timestamp, contest):
+    contest_end = contest["contest_end"]
+
+    if timestamp < contest_end:
+        raise HTTPException(
+            status_code=403,
+            detail="Contest not ended yet"
+        )
+
+
+def verify_participated_resume(contest_candidate):
+    resume = contest_candidate.get("resume")
+
+    if not resume:
+        raise HTTPException(
+            status_code=404,
+            detail="Candidate did not submit resume"
+        )
+
+    if not resume.get("file_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="Resume file not found"
+        )
+
+    return resume
+
+
+def verify_participated_hr(contest_candidate):
+    hr = contest_candidate.get("hr")
+
+    if not hr:
+        raise HTTPException(
+            status_code=404,
+            detail="Candidate did not participate in HR round"
+        )
+
+    question_bank = hr.get("question_bank", [])
+    if not question_bank:
+        raise HTTPException(
+            status_code=404,
+            detail="HR answers not found"
+        )
+
+    return hr
+
+
+def verify_hr_audio_answer(contest_candidate, question_id: str):
+    hr = verify_participated_hr(contest_candidate)
+
+    for q in hr.get("question_bank", []):
+        if q.get("question_id") == question_id:
+            if not q.get("audio_id"):
+                    raise HTTPException(
+                        status_code=404,
+                        detail="HR answer not found"
+                    )
+            return q
+
+
+def verify_unregister_time(timestamp, contest):
+    last_date_to_register = contest["last_date_to_register"]
+
+    if timestamp > last_date_to_register:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot unregister after registration deadline"
+        )
+
+
+def verify_resume_round_data(contest_candidate):
+    resume = contest_candidate.get("resume")
+
+    if not resume:
+        raise HTTPException(
+            status_code=404,
+            detail="Resume round data not found"
+        )
+
+    return resume
+
+def verify_coding_round_data(contest_candidate):
+    coding = contest_candidate.get("coding")
+
+    if not coding:
+        raise HTTPException(
+            status_code=404,
+            detail="Coding round data not found"
+        )
+
+    return coding
+
+
+def verify_concept_round_data(contest_candidate):
+    concept = contest_candidate.get("concept")
+
+    if not concept:
+        raise HTTPException(
+            status_code=404,
+            detail="Concept round data not found"
+        )
+
+    return concept
+
+
+def verify_hr_round_data(contest_candidate):
+    hr = contest_candidate.get("hr")
+
+    if not hr:
+        raise HTTPException(
+            status_code=404,
+            detail="HR round data not found"
+        )
+
+    return hr

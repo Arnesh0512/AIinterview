@@ -32,7 +32,7 @@ def evaluate_coding_answers(questions: list):
     {
       "feedback_per_question": [
         {
-          "question_id": 1,
+          "question_id": "1",
           "feedback": "...",
           "score": 8
         }
@@ -40,6 +40,8 @@ def evaluate_coding_answers(questions: list):
       "overall_feedback": "...",
       "overall_score": 7.5
     }
+
+    -question_id provided in input should match in output 
     """
 
     content = f"""
@@ -61,7 +63,7 @@ def evaluate_coding_answers(questions: list):
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_id": {"type": "integer"},
+                                "question_id": {"type": "string"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },

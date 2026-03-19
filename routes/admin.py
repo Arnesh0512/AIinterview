@@ -215,6 +215,8 @@ def get_all_contest_ids(
             "company": c.get("company"),
             "role": c.get("role"),
             "skills": c.get("skills", []),
+            "candidate_capacity": c.get("candidate_capacity"),
+            "contest_start": c.get("contest_start"),
             "created_on": c.get("created_on")
         })
 

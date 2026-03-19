@@ -20,9 +20,9 @@ from verify.contest import verify_hr_time_open, verify_hr_question, verify_hr_ti
 from verify.contest import verify_leaderboard_declare_time
 import tempfile
 from model import call_audio_model_1
-
-
-
+from fastapi.responses import StreamingResponse
+from verify.contest import verify_contest_end_time,verify_unregister_time, verify_participated_resume, verify_participated_hr, verify_hr_audio_answer
+from verify.contest import verify_hr_round_data,verify_coding_round_data, verify_resume_round_data, verify_concept_round_data
 security = HTTPBearer()
 
 router = APIRouter(
@@ -176,6 +176,39 @@ def register_for_contest(
 
 
 
+@router.delete("/unregister")
+def unregister_from_contest(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+    verify_unregister_time(generate_timestamp(), contest)
+
+    contest_collection.update_one(
+        {"_id": contest_obj_id},
+        {
+            "$pull": {"registered_candidates": candidate_id},
+            "$inc": {"candidate_count": -1}
+        }
+    )
+
+    contest_candidate_collection.delete_one(
+        {
+            "contest_id": contest_obj_id,
+            "candidate_id": candidate_id
+        }
+    )
+
+    return {
+        "success": True,
+        "message": "Unregistered successfully"
+    }
 
 
 
@@ -459,9 +492,10 @@ async def get_coding_questions(
 
     questions = list(
         leetcode.find(
-            {"_id": {"$in": coding_ids}},
+            {"question_id": {"$in": coding_ids}},
             {
-                "_id": 1,
+                "_id": 0,
+                "question_id": 1,
                 "task_name": 1,
                 "problem_description": 1
             }
@@ -472,7 +506,7 @@ async def get_coding_questions(
 
     for q in questions:
         result.append({
-            "question_id": str(q["_id"]),
+            "question_id": q["question_id"],
             "task_name": q["task_name"],
             "problem_description": q["problem_description"]
         })
@@ -492,6 +526,7 @@ async def get_coding_questions(
                 "language": None,
                 "answer": None,
                 "timestamp": None,
+                "feedback": None,
                 "score": None
             }
             for qid in coding_ids
@@ -515,6 +550,7 @@ async def get_coding_questions(
                 "$set": {
                     "coding.start_time": start_time,
                     "coding.question_bank":question_bank,
+                    "coding.overall_feedback": None,
                     "coding.end_time": end_time,
                     "coding.submitted_at": None
                 }
@@ -565,7 +601,7 @@ def submit_coding_answer(
     contest, contest_obj_id = verify_contest_id(contest_id)
     contest_candidate = verify_contest_registry(candidate, contest, "Y")
     verify_candidate_passed_resume(candidate_id, contest_id)
-    question_obj_id = verify_coding_question(contest, question_id)
+    verify_coding_question(contest, question_id)
     verify_coding_time(timestamp, contest, contest_candidate)
     verify_coding_submit(contest_candidate)
         
@@ -575,7 +611,7 @@ def submit_coding_answer(
         {
             "contest_id": contest_obj_id,
             "candidate_id": candidate_id,
-            "coding.question_bank.question_id": question_obj_id
+            "coding.question_bank.question_id": question_id
         },
         {
             "$set": {
@@ -794,6 +830,7 @@ async def get_concept_questions(
                 "question_id": qid,
                 "answer": None,
                 "timestamp": None,
+                "feedback": None,
                 "score": None
             }
             for qid in concept_questions
@@ -817,6 +854,7 @@ async def get_concept_questions(
                 "$set": {
                     "concept.start_time": start_time,
                     "concept.question_bank":question_bank,
+                    "concept.overall_feedback": None,
                     "concept.end_time": end_time,
                     "concept.submitted_at": None
                 }
@@ -1079,6 +1117,7 @@ async def get_hr_questions(
                 "transcript": None,
                 "segmented_data": None,
                 "timestamp": None,
+                "feedback": None,
                 "score": None
             }
             for qid in hr_questions
@@ -1101,6 +1140,7 @@ async def get_hr_questions(
                 "$set": {
                     "hr.start_time": start_time,
                     "hr.question_bank":question_bank,
+                    "hr.overall_feedback": None,
                     "hr.end_time": end_time,
                     "hr.submitted_at": None
                 }
@@ -1350,3 +1390,241 @@ def get_final_leaderboard(
         "data": result,
         "selection": selection
     }
+
+
+
+@router.get("/resume/question-bank")
+def get_resume_question_bank(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+    resume = verify_resume_round_data(contest_candidate)
+    question_bank = [
+        {
+            "question_id": q.get("question_id"),
+            "feedback": q.get("feedback"),
+            "score": q.get("score")
+        }
+        for q in resume.get("question_bank", [])
+    ]
+
+
+    return {
+        "success": True,
+        "data": {
+            "question_bank": question_bank,
+            "overall_feedback": resume.get("overall_feedback", ""),
+            "submitted_at": resume.get("submitted_at")
+        }
+    }
+
+
+@router.get("/coding/question-bank")
+def get_coding_question_bank(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+    coding = verify_coding_round_data(contest_candidate)
+    question_bank = [
+        {
+            "question_id": q.get("question_id"),
+            "language": q.get("language"),
+            "answer": q.get("answer"),
+            "timestamp": q.get("timestamp"),
+            "feedback": q.get("feedback"),
+            "score": q.get("score")
+        }
+        for q in coding.get("question_bank", [])
+    ]
+
+
+    return {
+        "success": True,
+        "data": {
+            "start_time": coding.get("start_time"),
+            "end_time": coding.get("end_time"),
+            "submitted_at": coding.get("submitted_at"),
+            "question_bank":question_bank,
+            "overall_feedback": coding.get("overall_feedback", "")
+        }
+    }
+
+
+@router.get("/concept/question-bank")
+def get_concept_question_bank(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+    concept = verify_concept_round_data(contest_candidate)
+    question_bank = [
+        {
+            "question_id": q.get("question_id"),
+            "answer": q.get("answer"),
+            "timestamp": q.get("timestamp"),
+            "feedback": q.get("feedback"),
+            "score": q.get("score")
+        }
+        for q in concept.get("question_bank", [])
+    ]
+
+
+    return {
+        "success": True,
+        "data": {
+            "start_time": concept.get("start_time"),
+            "end_time": concept.get("end_time"),
+            "submitted_at": concept.get("submitted_at"),
+            "question_bank": question_bank,
+            "overall_feedback": concept.get("overall_feedback", "")
+        }
+    }
+
+
+
+
+@router.get("/hr/question-bank")
+def get_hr_question_bank(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+    hr = verify_hr_round_data(contest_candidate)
+    question_bank = [
+        {
+            "question_id": q.get("question_id"),
+            "transcript": q.get("transcript"),
+            "segmented_data": q.get("segmented_data"),
+            "timestamp": q.get("timestamp"),
+            "feedback": q.get("feedback"),
+            "score": q.get("score")
+        }
+        for q in hr.get("question_bank", [])
+    ]
+
+    return {
+        "success": True,
+        "data": {
+            "start_time": hr.get("start_time"),
+            "end_time": hr.get("end_time"),
+            "submitted_at": hr.get("submitted_at"),
+            "question_bank": question_bank,
+            "overall_feedback": hr.get("overall_feedback", "")
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@router.get("/resume/file")
+def get_contest_resume_file(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+    verify_contest_end_time(generate_timestamp(), contest)
+    resume = verify_participated_resume(contest_candidate)
+
+    file_id = resume["file_id"]
+
+    try:
+        grid_out = contest_resume_fs.get(file_id)
+    except Exception:
+        raise HTTPException(
+            status_code=404,
+            detail="Resume file not found"
+        )
+
+    return StreamingResponse(
+        grid_out,
+        media_type=grid_out.content_type or "application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{grid_out.filename}"'
+        }
+    )
+
+
+
+@router.get("/hr/audio")
+def get_hr_audio_file(
+    contest_id: str,
+    question_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    contest_candidate = verify_contest_registry(candidate, contest, "Y")
+
+    verify_contest_end_time(generate_timestamp(), contest)
+    verify_hr_question(contest, question_id)
+    question_data = verify_hr_audio_answer(contest_candidate, question_id)
+
+    audio_id = question_data["audio_id"]
+
+    try:
+        grid_out = contest_audio_fs.get(audio_id)
+    except Exception:
+        raise HTTPException(
+            status_code=404,
+            detail="Audio file not found"
+        )
+
+    return StreamingResponse(
+        grid_out,
+        media_type=grid_out.content_type or "audio/wav",
+        headers={
+            "Content-Disposition": f'inline; filename="{grid_out.filename}"'
+        }
+    )
