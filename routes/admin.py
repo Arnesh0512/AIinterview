@@ -5,17 +5,23 @@ from schemas.user import UserCreate
 from verify.token import verify_access_token
 from verify.admin import verify_admin_payload, validate_contest_data, verify_contest_id, verify_duplicate_contest
 from prompt.admin import validate_role_skills, generate_resume_questions, generate_concept_questions, generate_hr_questions
-from utils.admin import generate_coding_ids
+from prompt.admin import generate_coding_ids
 from database import contest_collection
 from schemas.contest import ContestCreate
 from utils.time import generate_timestamp
 from datetime import datetime, timezone, timedelta
 import asyncio
 from utils.normalizer import normalize_and_rank, finalize_leaderboard
+from utils.admin import run_contest_scheduler, fake_submit_candidate_coding,fake_submit_candidate_concept,fake_submit_candidate_hr
 from bson import ObjectId
-import inspect
-from utils.contest import generate_coding_scores, generate_concept_scores, generate_hr_scores
-
+from database import candidate_collection
+from verify.contest import verify_resume_result_time, verify_hr_result_time,verify_coding_result_time, verify_concept_result_time, verify_leaderboard_declare_time, verify_contest_registry
+from utils.admin import format_leaderboard
+from verify.candidate import verify_candidate_by_id
+from fastapi.responses import StreamingResponse
+from database import contest_resume_fs, contest_audio_fs, candidate_collection
+from verify.candidate import verify_candidate_by_id
+from verify.contest import verify_resume_round_data, verify_hr_audio_answer, verify_hr_question
 
 
 security = HTTPBearer()
@@ -369,70 +375,6 @@ async def generate_resume_result(
 
 
 
-
-
-
-
-
-
-
-
-
-
-def fake_submit_candidate_coding(
-    contest_id: ObjectId,
-    contest: dict
-):
-    fake_submit_ids = contest.get("fake_submit_coding", [])
-    
-    if fake_submit_ids:
-
-        fake_contest_candidates = list(
-            contest_candidate_collection.find(
-                {
-                    "contest_id": contest_id,
-                    "candidate_id": {"$in": fake_submit_ids}
-                },
-                {
-                    "_id": 0,
-                    "candidate_id": 1,
-                    "coding": 1
-                }
-            )
-        )
-
-        for contest_candidate in fake_contest_candidates:
-            generate_coding_scores(
-                contest_id, 
-                contest_candidate["candidate_id"], 
-                contest_candidate
-            )
-
-            contest_candidate_collection.update_one(
-                {
-                    "contest_id": contest_id,
-                    "candidate_id": contest_candidate["candidate_id"]
-                },
-                {
-                    "$set": {
-                        "coding.submitted_at": contest_candidate["coding"]["end_time"]
-                    }
-                }
-            )
-
-    contest_collection.update_one(
-            {"_id": contest_id},
-            {"$set": {"fake_submit_coding": []}}
-        )
-
-
-
-
-
-
-
-
-
 @router.post("/result/coding")
 async def generate_coding_result(
     contest_id: str,
@@ -553,75 +495,6 @@ async def generate_coding_result(
         },
         upsert=True
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def fake_submit_candidate_concept(
-    contest_id: ObjectId,
-    contest: dict
-):
-    fake_submit_ids = contest.get("fake_submit_concept", [])
-    
-    if fake_submit_ids:
-
-        fake_contest_candidates = list(
-            contest_candidate_collection.find(
-                {
-                    "contest_id": contest_id,
-                    "candidate_id": {"$in": fake_submit_ids}
-                },
-                {
-                    "_id": 0,
-                    "candidate_id": 1,
-                    "concept": 1
-                }
-            )
-        )
-
-        for contest_candidate in fake_contest_candidates:
-            generate_concept_scores(
-                contest_id, 
-                contest_candidate["candidate_id"], 
-                contest_candidate
-            )
-
-            contest_candidate_collection.update_one(
-                {
-                    "contest_id": contest_id,
-                    "candidate_id": contest_candidate["candidate_id"]
-                },
-                {
-                    "$set": {
-                        "concept.submitted_at": contest_candidate["concept"]["end_time"]
-                    }
-                }
-            )
-    
-    contest_collection.update_one(
-            {"_id": contest_id},
-            {"$set": {"fake_submit_concept": []}}
-        )
-
 
 
 
@@ -767,75 +640,6 @@ async def generate_concept_result(
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def fake_submit_candidate_hr(
-    contest_id: ObjectId,
-    contest: dict
-):
-    fake_submit_ids = contest.get("fake_submit_hr", [])
-    
-    if fake_submit_ids:
-
-        fake_contest_candidates = list(
-            contest_candidate_collection.find(
-                {
-                    "contest_id": contest_id,
-                    "candidate_id": {"$in": fake_submit_ids}
-                },
-                {
-                    "_id": 0,
-                    "candidate_id": 1,
-                    "hr": 1
-                }
-            )
-        )
-
-        for contest_candidate in fake_contest_candidates:
-            generate_hr_scores(
-                contest_id, 
-                contest_candidate["candidate_id"], 
-                contest_candidate
-            )
-
-            contest_candidate_collection.update_one(
-                {
-                    "contest_id": contest_id,
-                    "candidate_id": contest_candidate["candidate_id"]
-                },
-                {
-                    "$set": {
-                        "hr.submitted_at": contest_candidate["hr"]["end_time"]
-                    }
-                }
-            )
-    
-    contest_collection.update_one(
-            {"_id": contest_id},
-            {"$set": {"fake_submit_hr": []}}
-        )
-
-
-
-
-
-
-
-
-
-
 @router.post("/result/hr")
 async def generate_hr_result(
     contest_id: str,
@@ -971,26 +775,6 @@ async def generate_hr_result(
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 @router.post("/result/leaderboard")
 async def generate_leaderboard(
     contest_id: str,
@@ -1088,75 +872,6 @@ async def generate_leaderboard(
 
 
 
-
-
-async def wait_until(target_time):
-
-    now = generate_timestamp()
-    wait_seconds = (target_time - now).total_seconds()
-
-    if wait_seconds > 0:
-        await asyncio.sleep(wait_seconds)
-
-
-async def run_contest_scheduler(
-    contest: dict,
-    token: str,
-):
-    credentials = HTTPAuthorizationCredentials(
-        scheme="Bearer",
-        credentials=token
-    )
-    contest_id = str(contest["_id"])
-
-    await wait_until(contest["resume_round"]["result"])
-    fun = generate_resume_result
-    if inspect.iscoroutinefunction(fun):
-        await fun(contest_id, credentials)
-    else:
-        fun(contest_id, credentials)
-
-
-
-    await wait_until(contest["coding_round"]["result"])
-    fun = generate_coding_result
-    if inspect.iscoroutinefunction(fun):
-        await fun(contest_id, credentials)
-    else:
-        fun(contest_id, credentials)
-
-
-
-
-    await wait_until(contest["concept_round"]["result"])
-    fun = generate_concept_result
-    if inspect.iscoroutinefunction(fun):
-        await fun(contest_id, credentials)
-    else:
-        fun(contest_id, credentials)
-
-
-
-
-    await wait_until(contest["hr_round"]["result"])
-    fun = generate_hr_result
-    if inspect.iscoroutinefunction(fun):
-        await fun(contest_id, credentials)
-    else:
-        fun(contest_id, credentials)
-
-
-
-
-
-    await wait_until(contest["leaderboard_declare_time"])
-    fun = generate_leaderboard
-    if inspect.iscoroutinefunction(fun):
-        await fun(contest_id, credentials)
-    else:
-        fun(contest_id, credentials)
-
-
 @router.post("/start-contest")
 async def start_contest(
     contest_id: str,
@@ -1169,9 +884,382 @@ async def start_contest(
 
     contest, contest_obj_id = verify_contest_id(contest_id)
 
-    asyncio.create_task(run_contest_scheduler(contest, token))
+    asyncio.create_task(
+        run_contest_scheduler(
+            contest,
+            token,
+            generate_hr_result,
+            generate_coding_result,
+            generate_resume_result, 
+            generate_concept_result, 
+            generate_leaderboard
+        )
+    )
 
     return {
         "success": True,
         "message": "Contest scheduler started"
+    }
+
+
+
+
+@router.get("/contest/candidates")
+def get_registered_candidates(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+
+    contest_candidates = list(
+        contest_candidate_collection.aggregate([
+            {
+                "$match": {"contest_id": contest_obj_id}
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "candidate_id": 1,
+                    "resume": {"$ne": ["$resume", None]},
+                    "coding": {"$ne": ["$coding", None]},
+                    "concept": {"$ne": ["$concept", None]},
+                    "hr": {"$ne": ["$hr", None]}
+                }
+            }
+        ])
+    )
+
+    candidate_ids = [doc["candidate_id"] for doc in contest_candidates]
+
+    candidates = list(
+        candidate_collection.find(
+            {"_id": {"$in": candidate_ids}},
+            {"full_name": 1, "email": 1}
+        )
+    )
+
+    candidate_map = {
+        c["_id"]: {
+            "name": c.get("full_name"),
+            "email": c.get("email")
+        }
+        for c in candidates
+    }
+
+    data = []
+    for cc in contest_candidates:
+        meta = candidate_map.get(cc["candidate_id"], {})
+
+        if cc["hr"]:
+            last_round = "hr"
+        elif cc["concept"]:
+            last_round = "concept"
+        elif cc["coding"]:
+            last_round = "coding"
+        elif cc["resume"]:
+            last_round = "resume"
+        else:
+            last_round = None
+
+        data.append({
+            "candidate_id": str(cc["candidate_id"]),
+            "name": meta.get("name"),
+            "email": meta.get("email"),
+            "last_round_participated": last_round
+        })
+
+    return {
+        "success": True,
+        "data": data
+    }
+
+
+@router.get("/leaderboard/resume")
+def view_resume_leaderboard(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    verify_resume_result_time(generate_timestamp(), contest)
+
+    leaderboard_doc = contest_leaderboard.find_one(
+        {"contest_id": contest_obj_id},
+        {"resume_round": 1, "_id": 0}
+    )
+
+    if not leaderboard_doc or "resume_round" not in leaderboard_doc:
+        raise HTTPException(status_code=404, detail="Resume leaderboard not found")
+
+    return {
+        "success": True,
+        "data": format_leaderboard(leaderboard_doc["resume_round"])
+    }
+
+
+@router.get("/leaderboard/coding")
+def view_coding_leaderboard(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    verify_coding_result_time(generate_timestamp(), contest)
+
+    leaderboard_doc = contest_leaderboard.find_one(
+        {"contest_id": contest_obj_id},
+        {"coding_round": 1, "_id": 0}
+    )
+
+    if not leaderboard_doc or "coding_round" not in leaderboard_doc:
+        raise HTTPException(status_code=404, detail="Coding leaderboard not found")
+
+    return {
+        "success": True,
+        "data": format_leaderboard(leaderboard_doc["coding_round"])
+    }
+
+
+
+@router.get("/leaderboard/concept")
+def view_concept_leaderboard(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    verify_concept_result_time(generate_timestamp(), contest)
+
+    leaderboard_doc = contest_leaderboard.find_one(
+        {"contest_id": contest_obj_id},
+        {"concept_round": 1, "_id": 0}
+    )
+
+    if not leaderboard_doc or "concept_round" not in leaderboard_doc:
+        raise HTTPException(status_code=404, detail="Concept leaderboard not found")
+
+    return {
+        "success": True,
+        "data": format_leaderboard(leaderboard_doc["concept_round"])
+    }
+
+
+@router.get("/leaderboard/hr")
+def view_hr_leaderboard(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    verify_hr_result_time(generate_timestamp(), contest)
+
+    leaderboard_doc = contest_leaderboard.find_one(
+        {"contest_id": contest_obj_id},
+        {"hr_round": 1, "_id": 0}
+    )
+
+    if not leaderboard_doc or "hr_round" not in leaderboard_doc:
+        raise HTTPException(status_code=404, detail="HR leaderboard not found")
+
+    return {
+        "success": True,
+        "data": format_leaderboard(leaderboard_doc["hr_round"])
+    }
+
+
+@router.get("/leaderboard/final")
+def view_final_leaderboard(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    verify_leaderboard_declare_time(generate_timestamp(), contest)
+
+    leaderboard_doc = contest_leaderboard.find_one(
+        {"contest_id": contest_obj_id},
+        {"final_leaderboard": 1, "_id": 0}
+    )
+
+    if not leaderboard_doc or "final_leaderboard" not in leaderboard_doc:
+        raise HTTPException(status_code=404, detail="Final leaderboard not found")
+
+    return {
+        "success": True,
+        "data": format_leaderboard(leaderboard_doc["final_leaderboard"])
+    }
+
+
+
+
+@router.get("/contest/candidate")
+def get_candidate_contest_details(
+    contest_id: str,
+    candidate_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    candidate, candidate_obj_id, candidate_email = verify_candidate_by_id(candidate_id, "Y")
+
+    contest_candidate = verify_contest_registry(candidate,contest,"Y")
+    contest_candidate["_id"] = str(contest_candidate["_id"])
+    contest_candidate["contest_id"] = str(contest_candidate["contest_id"])
+    contest_candidate["candidate_id"] = str(contest_candidate["candidate_id"])
+
+    if contest_candidate.get("resume"):
+        contest_candidate["resume"].pop("file_id", None)
+
+    if contest_candidate.get("hr"):
+        for q in contest_candidate["hr"].get("question_bank", []):
+            q.pop("audio_id", None)
+
+    return {
+        "success": True,
+        "data": contest_candidate
+    }
+
+
+
+
+
+
+
+
+@router.get("/contest/candidate/resume")
+def get_candidate_resume_file(
+    contest_id: str,
+    candidate_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    candidate, candidate_obj_id, candidate_email = verify_candidate_by_id(candidate_id, "Y")
+    contest_candidate = verify_contest_registry(candidate,contest,"Y")
+
+    verify_resume_result_time(generate_timestamp(), contest)
+    resume = verify_resume_round_data(contest_candidate)
+    file_id = resume["file_id"]
+
+    try:
+        grid_out = contest_resume_fs.get(file_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Resume file not found")
+
+    return StreamingResponse(
+        grid_out,
+        media_type=grid_out.content_type or "application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{grid_out.filename}"'}
+    )
+
+
+@router.get("/contest/candidate/hr/audio")
+def get_candidate_hr_audio(
+    contest_id: str,
+    candidate_id: str,
+    question_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+    candidate, candidate_obj_id, candidate_email = verify_candidate_by_id(candidate_id, "Y")
+    contest_candidate = verify_contest_registry(candidate,contest,"Y")
+
+    verify_hr_result_time(generate_timestamp(), contest)
+    verify_hr_question(contest, question_id)
+    question_data = verify_hr_audio_answer(contest_candidate, question_id)
+    audio_id = question_data["audio_id"]
+
+    try:
+        grid_out = contest_audio_fs.get(audio_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    return StreamingResponse(
+        grid_out,
+        media_type=grid_out.content_type or "audio/wav",
+        headers={"Content-Disposition": f'inline; filename="{grid_out.filename}"'}
+    )
+
+
+@router.delete("/contest/delete")
+def delete_contest(
+    contest_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    admin, admin_id, email = verify_admin_payload(payload)
+
+    contest, contest_obj_id = verify_contest_id(contest_id)
+
+    contest_candidates = list(
+        contest_candidate_collection.find({"contest_id": contest_obj_id})
+    )
+
+    resume_file_ids = []
+    audio_file_ids = []
+
+    for cc in contest_candidates:
+        resume = cc.get("resume")
+        if resume and resume.get("file_id"):
+            resume_file_ids.append(resume["file_id"])
+
+        hr = cc.get("hr")
+        if hr:
+            for q in hr.get("question_bank", []):
+                if q.get("audio_id"):
+                    audio_file_ids.append(q["audio_id"])
+
+    for file_id in resume_file_ids:
+        try:
+            contest_resume_fs.delete(file_id)
+        except Exception:
+            pass
+
+    for audio_id in audio_file_ids:
+        try:
+            contest_audio_fs.delete(audio_id)
+        except Exception:
+            pass
+
+    contest_candidate_collection.delete_many({"contest_id": contest_obj_id})
+    contest_leaderboard.delete_one({"contest_id": contest_obj_id})
+    contest_collection.delete_one({"_id": contest_obj_id})
+
+    return {
+        "success": True,
+        "message": "Contest deleted successfully"
     }

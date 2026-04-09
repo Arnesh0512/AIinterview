@@ -21,7 +21,7 @@ from verify.contest import verify_leaderboard_declare_time
 import tempfile
 from model import call_audio_model_1
 from fastapi.responses import StreamingResponse
-from verify.contest import verify_contest_end_time,verify_unregister_time, verify_participated_resume, verify_participated_hr, verify_hr_audio_answer
+from verify.contest import verify_contest_end_time,verify_unregister_time, verify_hr_audio_answer
 from verify.contest import verify_hr_round_data,verify_coding_round_data, verify_resume_round_data, verify_concept_round_data
 security = HTTPBearer()
 
@@ -866,7 +866,7 @@ async def get_concept_questions(
                 contest_id,
                 token,
                 end_time,
-                submit_coding
+                submit_concept
             )
         )
 
@@ -1153,7 +1153,7 @@ async def get_hr_questions(
                 contest_id,
                 token,
                 end_time,
-                submit_coding
+                submit_hr
             )
         )
 
@@ -1572,7 +1572,7 @@ def get_contest_resume_file(
     contest_candidate = verify_contest_registry(candidate, contest, "Y")
 
     verify_contest_end_time(generate_timestamp(), contest)
-    resume = verify_participated_resume(contest_candidate)
+    resume = verify_resume_round_data(contest_candidate)
 
     file_id = resume["file_id"]
 

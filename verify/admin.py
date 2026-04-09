@@ -4,6 +4,8 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from typing import Tuple
 from schemas.contest import ContestCreate
+from utils.time import generate_timestamp
+from datetime import timedelta
 
 def verify_admin_payload(payload: dict) -> Tuple[dict|None, ObjectId, str]:
 
@@ -208,9 +210,9 @@ def validate_contest_data(data: ContestCreate):
     selected_hr = data.selected_hr
 
 
+    now = generate_timestamp() + timedelta(minutes=60)
 
-
-    if not (
+    if not (now <
         last_date_to_register < 
         resume_start < resume_end < 
         contest_start < resume_result_time <

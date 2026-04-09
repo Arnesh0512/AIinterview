@@ -440,25 +440,7 @@ def verify_contest_end_time(timestamp, contest):
         )
 
 
-def verify_participated_resume(contest_candidate):
-    resume = contest_candidate.get("resume")
-
-    if not resume:
-        raise HTTPException(
-            status_code=404,
-            detail="Candidate did not submit resume"
-        )
-
-    if not resume.get("file_id"):
-        raise HTTPException(
-            status_code=404,
-            detail="Resume file not found"
-        )
-
-    return resume
-
-
-def verify_participated_hr(contest_candidate):
+def verify_hr_audio_answer(contest_candidate, question_id: str):
     hr = contest_candidate.get("hr")
 
     if not hr:
@@ -466,19 +448,6 @@ def verify_participated_hr(contest_candidate):
             status_code=404,
             detail="Candidate did not participate in HR round"
         )
-
-    question_bank = hr.get("question_bank", [])
-    if not question_bank:
-        raise HTTPException(
-            status_code=404,
-            detail="HR answers not found"
-        )
-
-    return hr
-
-
-def verify_hr_audio_answer(contest_candidate, question_id: str):
-    hr = verify_participated_hr(contest_candidate)
 
     for q in hr.get("question_bank", []):
         if q.get("question_id") == question_id:
@@ -488,6 +457,11 @@ def verify_hr_audio_answer(contest_candidate, question_id: str):
                         detail="HR answer not found"
                     )
             return q
+        
+    raise HTTPException(
+        status_code=404,
+        detail="HR answer not found"
+    )
 
 
 def verify_unregister_time(timestamp, contest):
