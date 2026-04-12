@@ -1,7 +1,7 @@
 from openai import OpenAI
 from utils.reader import OPENAI_API_KEY
-import whisper
-from faster_whisper import WhisperModel
+#import whisper
+#from faster_whisper import WhisperModel
 import wave
 
 
@@ -115,9 +115,7 @@ def call_audio_model_1(wav_path):
 
 
 
-
-
-
+'''
 
 ###############################################
 
@@ -335,3 +333,4 @@ def call_audio_model_5(wav_path):
     transcript = transcript.strip()
 
     return segmented_data, transcript
+'''
