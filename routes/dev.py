@@ -18,8 +18,8 @@ import threading
 import psutil
 
 from model import call_audio_model_1
-from model import call_audio_model_2, call_audio_model_3
-from model import call_audio_model_4, call_audio_model_5
+#from model import call_audio_model_2, call_audio_model_3
+#from model import call_audio_model_4, call_audio_model_5
 
 
 router = APIRouter(prefix="/dev", tags=["Dev Auth"])
@@ -246,10 +246,13 @@ async def submit_audio_answer(
 
         print("\n===== Running Models =====")
 
-        model_list = [call_audio_model_1, call_audio_model_2, call_audio_model_3, call_audio_model_4, call_audio_model_5]
-        model_name = ["openai-gpt4o-mini-transcribe","whisper-base","whisper-small","faster-whisper-base","faster-whisper-small",]
+        #model_list = [call_audio_model_1, call_audio_model_2, call_audio_model_3, call_audio_model_4, call_audio_model_5]
+        #model_name = ["openai-gpt4o-mini-transcribe","whisper-base","whisper-small","faster-whisper-base","faster-whisper-small",]
 
-        for i in range(5):
+        model_list = [call_audio_model_1]
+        model_name = ["openai-gpt4o-mini-transcribe"]
+
+        for i in range(len(model_list)):
 
             print("##########################################################")
             print(i+1)
