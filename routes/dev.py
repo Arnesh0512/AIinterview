@@ -8,7 +8,7 @@ from database import audio_interview_collection, audio_fs
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
 from utils.reader import OPENAI_API_KEY
-
+'''
 import tempfile
 import os
 import json
@@ -21,11 +21,11 @@ from model import call_audio_model_1
 #from model import call_audio_model_2, call_audio_model_3
 #from model import call_audio_model_4, call_audio_model_5
 
-
+'''
 router = APIRouter(prefix="/dev", tags=["Dev Auth"])
 security = HTTPBearer()
 
-
+'''
 
 @router.post("/generate-candidate-token")
 def generate_token(email: str):
@@ -312,3 +312,5 @@ async def submit_audio_answer(
 
         if temp_audio_path and os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
+
+'''
