@@ -324,7 +324,12 @@ Instructions:
 
 Return strictly valid JSON:
 {
-  "feedback": "detailed combined feedback"
+  "feedback": {
+    "improvement": "detailed improvement analysis",
+    "weaknesses": "persistent or current weaknesses",
+    "strengths": "consistent or emerging strengths",
+    "recommendations": "specific next-step recommendations"
+  }
 }
 """
 
@@ -343,9 +348,20 @@ Return strictly valid JSON:
             "schema": {
                 "type": "object",
                 "properties": {
-                    "feedback": {"type": "string"}
+                    "feedback": {
+                        "type": "object",
+                        "properties": {
+                            "improvement": {"type": "string"},
+                            "weaknesses": {"type": "string"},
+                            "strengths": {"type": "string"},
+                            "recommendations": {"type": "string"}
+                        },
+                        "required": ["improvement", "weaknesses", "strengths", "recommendations"],
+                        "additionalProperties": False
+                    }
                 },
-                "required": ["feedback"]
+                "required": ["feedback"],
+                "additionalProperties": False
             }
         }
     }
@@ -404,7 +420,12 @@ Instructions:
 
 Return strictly valid JSON:
 {
-  "feedback": "detailed combined feedback"
+  "feedback": {
+    "improvement": "detailed improvement analysis",
+    "weaknesses": "persistent or current weaknesses",
+    "strengths": "consistent or emerging strengths",
+    "recommendations": "specific next-step recommendations"
+  }
 }
 """
 
@@ -423,9 +444,20 @@ Return strictly valid JSON:
             "schema": {
                 "type": "object",
                 "properties": {
-                    "feedback": {"type": "string"}
+                    "feedback": {
+                        "type": "object",
+                        "properties": {
+                            "improvement": {"type": "string"},
+                            "weaknesses": {"type": "string"},
+                            "strengths": {"type": "string"},
+                            "recommendations": {"type": "string"}
+                        },
+                        "required": ["improvement", "weaknesses", "strengths", "recommendations"],
+                        "additionalProperties": False
+                    }
                 },
-                "required": ["feedback"]
+                "required": ["feedback"],
+                "additionalProperties": False
             }
         }
     }

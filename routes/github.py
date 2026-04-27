@@ -295,7 +295,7 @@ def save_answer(
 
 
 @router.put("/questions/reattempt")
-def reattempt_session(
+async def reattempt_session(
     github_id: str,
     question_session_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -487,6 +487,7 @@ def get_all_sessions(
         {
             "_id": 1,
             "session_number": 1,
+            "status": 1,
             "timestamp": 1
         }
     ).sort("timestamp", 1)
@@ -495,6 +496,7 @@ def get_all_sessions(
         {
             "question_session_id": str(doc["_id"]),
             "session_number": doc.get("session_number"),
+            "status": doc.get("status"),
             "timestamp": doc.get("timestamp")
         }
         for doc in sessions
@@ -596,7 +598,7 @@ def delete_session(
 
 
 @router.put("/questions/delete-reattempt")
-def delete_and_reattempt(
+async def delete_and_reattempt(
     github_id: str,
     question_session_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -662,7 +664,7 @@ def delete_and_reattempt(
 
 
 
-@router.get("/questions/combined-feedback")
+@router.get("/progress/github")
 def combined_feedback_last_x_sessions(
     github_id: str,
     x: int,
@@ -704,7 +706,7 @@ def combined_feedback_last_x_sessions(
 
 
 
-@router.get("/questions/session-progress-feedback")
+@router.get("/progress/session")
 def combined_feedback_same_session(
     github_id: str,
     question_session_id: str,
@@ -755,6 +757,63 @@ def combined_feedback_same_session(
     }
 
 
+
+@router.get("/progress/github/all")
+def get_different_combined_feedback(
+    github_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+
+    combined_feedback = []
+    for item in github_doc.get("combined_feedback", []):
+        if item.get("type") == "different":
+            combined_feedback.append({
+                "sessions_used": item.get("sessions_used", {}),
+                "feedback": item.get("feedback", ""),
+                "type": item.get("type"),
+                "timestamp": item.get("timestamp", None)
+            })
+
+    return {
+        "resume_id": str(github_obj_id),
+        "combined_feedback": combined_feedback
+    }
+
+
+@router.get("/progress/session/all")
+def get_same_combined_feedback(
+    github_id: str,
+    session_number: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    candidate, candidate_id, email = verify_candidate_payload(payload)
+
+    github_doc, github_obj_id = verify_github(github_id, candidate_id)
+
+    combined_feedback = []
+    for item in github_doc.get("combined_feedback", []):
+        if item.get("type") == "same":
+            first_session = next(iter(item.get("sessions_used", {}).values()), None)
+            if first_session and first_session.get("session_number") == session_number:
+                combined_feedback.append({
+                    "sessions_used": item.get("sessions_used", {}),
+                    "feedback": item.get("feedback", ""),
+                    "type": item.get("type"),
+                    "timestamp": item.get("timestamp", None)
+                })
+
+
+    return {
+        "resume_id": str(github_obj_id),
+        "combined_feedback": combined_feedback
+    }
 
 
 

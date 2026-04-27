@@ -268,16 +268,17 @@ Instructions:
 - Evaluate ability to connect concepts across topics.
 - Compare recent sessions with older sessions.
 - Be strict, analytical, and professional.
-- Provide structured feedback including:
-    * Strengths
-    * Weaknesses
-    * Progression analysis
-    * Recommendations
+- Provide structured feedback (improvement, weaknesses, strengths, recommendations).
 - Do NOT mention JSON or formatting.
 
 Return strictly valid JSON:
 {
-  "feedback": "detailed combined feedback"
+  "feedback": {
+    "improvement": "detailed improvement analysis",
+    "weaknesses": "persistent or current weaknesses",
+    "strengths": "consistent or emerging strengths",
+    "recommendations": "specific next-step recommendations"
+  }
 }
 """
 
@@ -296,9 +297,20 @@ Session wise Question & Answers:
             "schema": {
                 "type": "object",
                 "properties": {
-                    "feedback": {"type": "string"}
+                    "feedback": {
+                        "type": "object",
+                        "properties": {
+                            "improvement": {"type": "string"},
+                            "weaknesses": {"type": "string"},
+                            "strengths": {"type": "string"},
+                            "recommendations": {"type": "string"}
+                        },
+                        "required": ["improvement", "weaknesses", "strengths", "recommendations"],
+                        "additionalProperties": False
+                    }
                 },
-                "required": ["feedback"]
+                "required": ["feedback"],
+                "additionalProperties": False
             }
         }
     }
@@ -356,16 +368,17 @@ Instructions:
 - Evaluate depth growth in theoretical reasoning.
 - Compare the latest attempt clearly with older attempts.
 - Be strict, analytical, and professional.
-- Provide structured feedback including:
-    * Improvements observed
-    * Remaining weaknesses
-    * Conceptual maturity growth
-    * Recommendations
+- Provide structured feedback (improvement, weaknesses, strengths, recommendations).
 - Do NOT mention JSON or formatting.
 
 Return strictly valid JSON:
 {
-  "feedback": "detailed combined feedback"
+  "feedback": {
+    "improvement": "detailed improvement analysis",
+    "weaknesses": "persistent or current weaknesses",
+    "strengths": "consistent or emerging strengths",
+    "recommendations": "specific next-step recommendations"
+  }
 }
 """
 
@@ -384,9 +397,20 @@ Session wise Question & Answers:
             "schema": {
                 "type": "object",
                 "properties": {
-                    "feedback": {"type": "string"}
+                    "feedback": {
+                        "type": "object",
+                        "properties": {
+                            "improvement": {"type": "string"},
+                            "weaknesses": {"type": "string"},
+                            "strengths": {"type": "string"},
+                            "recommendations": {"type": "string"}
+                        },
+                        "required": ["improvement", "weaknesses", "strengths", "recommendations"],
+                        "additionalProperties": False
+                    }
                 },
-                "required": ["feedback"]
+                "required": ["feedback"],
+                "additionalProperties": False
             }
         }
     }

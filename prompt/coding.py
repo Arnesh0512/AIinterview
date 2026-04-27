@@ -139,16 +139,18 @@ Instructions:
 - Identify improvement in time/space complexity reasoning.
 - Compare recent sessions with older sessions.
 - Be strict and analytical.
-- Provide structured feedback including:
-    * Strengths
-    * Weaknesses
-    * Progression analysis
-    * Recommendations for improvement
+- Be strict, analytical, and professional.
+- Provide structured feedback (strengths, weaknesses, progression, recommendations).
 - Do NOT mention JSON or formatting.
 
 Return strictly valid JSON:
 {
-  "feedback": "detailed combined feedback"
+  "feedback": {
+    "improvement": "detailed improvement analysis",
+    "weaknesses": "persistent or current weaknesses",
+    "strengths": "consistent or emerging strengths",
+    "recommendations": "specific next-step recommendations"
+  }
 }
 """
 
@@ -164,9 +166,20 @@ Session wise Coding Attempts:
             "schema": {
                 "type": "object",
                 "properties": {
-                    "feedback": {"type": "string"}
+                    "feedback": {
+                        "type": "object",
+                        "properties": {
+                            "improvement": {"type": "string"},
+                            "weaknesses": {"type": "string"},
+                            "strengths": {"type": "string"},
+                            "recommendations": {"type": "string"}
+                        },
+                        "required": ["improvement", "weaknesses", "strengths", "recommendations"],
+                        "additionalProperties": False
+                    }
                 },
-                "required": ["feedback"]
+                "required": ["feedback"],
+                "additionalProperties": False
             }
         }
     }
@@ -222,17 +235,18 @@ Instructions:
 - Identify persistent mistakes.
 - Compare latest attempt with older attempts clearly.
 - Evaluate whether complexity improved.
-- Be strict and analytical.
-- Provide structured feedback including:
-    * Improvements observed
-    * Remaining weaknesses
-    * Technical maturity growth
-    * Recommendations
+- Be strict, analytical, and professional.
+- Provide structured feedback (improvement, weaknesses, strengths, recommendations).
 - Do NOT mention JSON or formatting.
 
 Return strictly valid JSON:
 {
-  "feedback": "detailed combined feedback"
+  "feedback": {
+    "improvement": "detailed improvement analysis",
+    "weaknesses": "persistent or current weaknesses",
+    "strengths": "consistent or emerging strengths",
+    "recommendations": "specific next-step recommendations"
+  }
 }
 """
 
@@ -248,9 +262,20 @@ Session wise Coding Attempts:
             "schema": {
                 "type": "object",
                 "properties": {
-                    "feedback": {"type": "string"}
+                    "feedback": {
+                        "type": "object",
+                        "properties": {
+                            "improvement": {"type": "string"},
+                            "weaknesses": {"type": "string"},
+                            "strengths": {"type": "string"},
+                            "recommendations": {"type": "string"}
+                        },
+                        "required": ["improvement", "weaknesses", "strengths", "recommendations"],
+                        "additionalProperties": False
+                    }
                 },
-                "required": ["feedback"]
+                "required": ["feedback"],
+                "additionalProperties": False
             }
         }
     }
