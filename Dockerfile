@@ -22,8 +22,5 @@ RUN pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org --
 # Copy project files
 COPY . .
 
-# Expose port
-EXPOSE 8001
-
 # Run FastAPI
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
