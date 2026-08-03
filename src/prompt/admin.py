@@ -169,7 +169,7 @@ def generate_coding_ids(company:str, coding_question_count: int) -> List:
 
     final_coding = random.sample(coding_pool, coding_question_count)
 
-    coding_ids = [str(q["question_id"]) for q in final_coding]
+    coding_ids = [q["question_id"] for q in final_coding]
 
     return coding_ids 
 

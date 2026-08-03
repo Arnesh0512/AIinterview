@@ -352,9 +352,9 @@ def verify_coding_question(contest, question_id):
 
 def verify_concept_question(contest, question_id):
 
-    concept_questions = contest["concept_round"]["questions"]
+    question_ids = [q["question_id"] for q in contest["concept_round"]["questions"]]
 
-    if question_id not in concept_questions:
+    if question_id not in question_ids:
         raise HTTPException(
             status_code=400,
             detail="Invalid concept question id"
@@ -363,9 +363,9 @@ def verify_concept_question(contest, question_id):
 
 def verify_hr_question(contest, question_id):
 
-    hr_questions = contest["hr_round"]["questions"]
+    question_ids = [q["question_id"] for q in contest["hr_round"]["questions"]]
 
-    if question_id not in hr_questions:
+    if question_id not in question_ids:
         raise HTTPException(
             status_code=400,
             detail="Invalid HR question id"
@@ -440,7 +440,7 @@ def verify_contest_end_time(timestamp, contest):
         )
 
 
-def verify_hr_audio_answer(contest_candidate, question_id: str):
+def verify_hr_audio_answer(contest_candidate, question_id: int):
     hr = contest_candidate.get("hr")
 
     if not hr:

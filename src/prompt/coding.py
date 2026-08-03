@@ -32,7 +32,7 @@ def evaluate_coding_answers(questions: list):
     {
       "feedback_per_question": [
         {
-          "question_id": "1",
+          "question_id": 1,
           "feedback": "...",
           "score": 8
         }
@@ -63,7 +63,7 @@ def evaluate_coding_answers(questions: list):
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_id": {"type": "string"},
+                                "question_id": {"type": "integer"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },

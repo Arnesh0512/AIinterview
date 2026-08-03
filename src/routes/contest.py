@@ -583,7 +583,7 @@ async def get_coding_questions(
 @router.post("/coding/answer")
 def submit_coding_answer(
     contest_id: str,
-    question_id: str,
+    question_id: int,
     answer: str,
     language: str,
     frontend_timestamp : datetime,
@@ -827,13 +827,13 @@ async def get_concept_questions(
 
         question_bank = [
             {
-                "question_id": qid,
+                "question_id": q["question_id"],
                 "answer": None,
                 "timestamp": None,
                 "feedback": None,
                 "score": None
             }
-            for qid in concept_questions
+            for q in concept_questions
         ]
 
         end_time = contest["concept_round"]["end"]
@@ -887,7 +887,7 @@ async def get_concept_questions(
 @router.post("/concept/answer")
 def submit_concept_answer(
     contest_id: str,
-    question_id: str,
+    question_id: int,
     answer: str,
     frontend_timestamp : datetime,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -1112,7 +1112,7 @@ async def get_hr_questions(
 
         question_bank = [
             {
-                "question_id": qid,
+                "question_id": q["question_id"],
                 "audio_id": None,
                 "transcript": None,
                 "segmented_data": None,
@@ -1120,7 +1120,7 @@ async def get_hr_questions(
                 "feedback": None,
                 "score": None
             }
-            for qid in hr_questions
+            for q in hr_questions
         ]
 
         end_time = contest["hr_round"]["end"]
@@ -1174,7 +1174,7 @@ async def get_hr_questions(
 @router.post("/hr/answer")
 async def submit_hr_answer(
     contest_id: str = Form(...),
-    question_id: str = Form(...),
+    question_id: int = Form(...),
     frontend_timestamp: datetime = Form(...),
     audio: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -1597,7 +1597,7 @@ def get_contest_resume_file(
 @router.get("/hr/audio")
 def get_hr_audio_file(
     contest_id: str,
-    question_id: str,
+    question_id: int,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     token = credentials.credentials

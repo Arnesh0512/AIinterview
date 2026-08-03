@@ -135,7 +135,7 @@ def generate_concept_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, co
     question_bank = concept.get("question_bank", [])
 
     contest = contest_collection.find_one({"_id": contest_obj_id})
-    concept_question_bank = contest["concept_round"]["questions"]
+    concept_question_bank = {q["question_id"]: q["question"] for q in contest["concept_round"]["questions"]}
 
 
     evaluation_input = []
@@ -200,7 +200,7 @@ def generate_hr_scores(contest_obj_id: ObjectId, candidate_id: ObjectId, contest
     question_bank = hr.get("question_bank", [])
 
     contest = contest_collection.find_one({"_id": contest_obj_id})
-    hr_question_bank = contest["hr_round"]["questions"]
+    hr_question_bank = {q["question_id"]: q["question"] for q in contest["hr_round"]["questions"]}
 
 
     evaluation_input = []

@@ -78,7 +78,7 @@ def evaluate_resume_score(
 ):
 
     questions_text = "\n".join(
-        f"{qid}. {q}" for qid, q in resume_questions.items()
+        f"{q['question_id']}. {q['question']}" for q in resume_questions
     )
 
     prompt = """
@@ -113,7 +113,7 @@ IMPORTANT:
   "results":
     [
         {
-        "question_id":"string",
+        "question_id":integer,
         "feedback": "string",
         "score":number
         }, ....
@@ -146,7 +146,7 @@ Skills: {", ".join(skills)}
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_id": {"type": "string"},
+                                "question_id": {"type": "integer"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
@@ -211,7 +211,7 @@ IMPORTANT:
   "results":
     [
         {
-        "question_id":"string",
+        "question_id":integer,
         "feedback": "string",
         "score":number
         }, ....
@@ -234,7 +234,7 @@ IMPORTANT:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_id": {"type": "string"},
+                                "question_id": {"type": "integer"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
@@ -305,7 +305,7 @@ IMPORTANT:
   "results":
     [
         {
-        "question_id":"string",
+        "question_id":integer,
         "feedback": "string",
         "score":number
         }, ....
@@ -328,7 +328,7 @@ IMPORTANT:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_id": {"type": "string"},
+                                "question_id": {"type": "integer"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
@@ -372,7 +372,7 @@ You are a senior HR interviewer evaluating candidate responses.
 You will receive a list of dictionaries in the following format:
 
 {
- "question_id": "string",
+ "question_id": integer,
  "question": "string",
  "transcript": "string",
  "segmented_data":[
@@ -384,7 +384,7 @@ transcript is made using segmented_data text field
 
 It is given candidate was given exactly 1 minute to speak his answer. ##########
 
-For question_id "1" the question will be:
+For question_id 1 the question will be:
 "Introduce Yourself"
 
 For this question you will also receive a candidate resume summary.
@@ -401,7 +401,7 @@ Confidence analysis rule:
 - Longer pauses or very short answers may indicate low confidence
 - Smooth continuous speech with moderate pacing indicates higher confidence
 
-For question_id "1":
+For question_id 1:
 - Evaluate whether the candidate introduction aligns with the resume summary.
 
 Scoring rules:
@@ -424,7 +424,7 @@ IMPORTANT:
   "results":
     [
         {
-        "question_id":"string",
+        "question_id":integer,
         "feedback": "string",
         "score":number
         }, ....
@@ -453,7 +453,7 @@ IMPORTANT:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_id": {"type": "string"},
+                                "question_id": {"type": "integer"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },

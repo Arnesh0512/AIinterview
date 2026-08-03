@@ -215,7 +215,7 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
     {
     "feedback_per_question": [
         {
-        "question_number": 1,
+        "question_id": 1,
         "feedback": "...",
         "score": 8
         }
@@ -245,11 +245,11 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_number": {"type": "integer"},
+                                "question_id": {"type": "integer"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
-                            "required": ["question_number", "feedback", "score"]
+                            "required": ["question_id", "feedback", "score"]
                         }
                     },
                     "overall_feedback": {"type": "string"},

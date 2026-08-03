@@ -151,7 +151,7 @@ def create_contest(
         [s.value for s in data.skills],
         data.resume_questions_count
     )
-    resume_questions = {str(i + 1): q for i, q in enumerate(resume_questions)}
+    resume_questions = [{"question_id":i + 1, "question": q} for i, q in enumerate(resume_questions)]
 
     coding_questions = generate_coding_ids(
         data.company.value,
@@ -163,14 +163,15 @@ def create_contest(
         [s.value for s in data.skills],
         data.concept_questions_count
     )
-    concept_questions = {str(i + 1): q for i, q in enumerate(concept_questions)}
+    concept_questions = [{"question_id":i + 1, "question": q} for i, q in enumerate(concept_questions)]
 
     hr_questions = generate_hr_questions(
         data.role.value,
         data.hr_questions_count-1
     )
-    hr_questions = {str(i + 2): q for i, q in enumerate(hr_questions)}
-    hr_questions["1"] = "Introduce Yourself"
+    hr_questions[0] ={"question_id":1, "question": "Introduce Yourself"}
+    hr_questions = [{"question_id":i + 2, "question": q} for i, q in enumerate(hr_questions)]
+    
     
     contest_data = data.model_dump()
     contest_data["admin_created_id"] = admin_id
@@ -306,7 +307,7 @@ async def generate_resume_result(
 
         for q in question_bank:
 
-            qid = int(q["question_id"]) - 1
+            qid = q["question_id"] - 1
             score = q["score"]
 
             candidates_scores[qid].append({
@@ -514,7 +515,7 @@ async def generate_concept_result(
     contest, contest_obj_id = verify_contest_id(contest_id)
     fake_submit_candidate_concept(contest_obj_id, contest)
 
-    concept_ids = list(contest["concept_round"]["questions"].keys())
+    concept_ids = [q["question_id"] for q in contest["concept_round"]["questions"]]
     concept_index_map = {qid: i for i, qid in enumerate(concept_ids)}
 
 
@@ -651,7 +652,7 @@ async def generate_hr_result(
     contest, contest_obj_id = verify_contest_id(contest_id)
     fake_submit_candidate_hr(contest_obj_id, contest)
 
-    hr_ids = list(contest["hr_round"]["questions"].keys())
+    hr_ids = [q["question_id"] for q in contest["hr_round"]["questions"]]
     hr_index_map = {qid: i for i, qid in enumerate(hr_ids)}
 
 
@@ -1186,7 +1187,7 @@ def get_candidate_resume_file(
 def get_candidate_hr_audio(
     contest_id: str,
     candidate_id: str,
-    question_id: str,
+    question_id: int,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     token = credentials.credentials

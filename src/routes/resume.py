@@ -7,7 +7,7 @@ from database import resume_collection, resume_question_collection, resume_fs, c
 from prompt.resume import process_resume, generate_resume_question, evaluate_resume_answers, generate_resume_combined_diff_session_feedback, generate_resume_combined_same_session_feedback
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
-from verify.resume import verify_resume, verify_question_session, verify_session_status,verify_session_status2, verify_session_time, verify_question_number, verify_file_id, verify_timestamp
+from verify.resume import verify_resume, verify_question_session, verify_session_status,verify_session_status2, verify_session_time, verify_question_id, verify_file_id, verify_timestamp
 from fastapi.responses import StreamingResponse
 from datetime import datetime, timedelta, timezone
 from utils.resume import previous_resume_session_questions, auto_submit
@@ -231,7 +231,7 @@ async def generate_questions(
 
     for i, question in enumerate(questions_list, start=1):
         question_bank.append({
-            "question_number": i,
+            "question_id": i,
             "question": question,
             "answer": "",
             "feedback": "",
@@ -300,7 +300,7 @@ async def generate_questions(
 def save_answer(
     resume_id: str,
     question_session_id: str,
-    question_number: int,
+    question_id: int,
     answer: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -316,13 +316,13 @@ def save_answer(
     )
     verify_session_status(session_doc)
     verify_session_time(session_doc, session_obj_id)
-    verify_question_number(session_doc, question_number)
+    verify_question_id(session_doc, question_id)
 
 
     resume_question_collection.update_one(
         {
             "_id": session_obj_id,
-            "question_bank.question_number": question_number
+            "question_bank.question_id": question_id
         },
         {
             "$set": {
@@ -362,7 +362,7 @@ async def reattempt_session(
 
     for q in old_session_doc["question_bank"]:
         new_question_bank.append({
-            "question_number": q["question_number"],
+            "question_id": q["question_id"],
             "question": q["question"],
             "answer": "",
             "feedback": "",
@@ -490,12 +490,12 @@ def generate_feedback(
     updated_question_bank = session_doc["question_bank"]
 
     feedback_map = {
-        item["question_number"]: item
+        item["question_id"]: item
         for item in feedback_per_question
     }
 
     for q in updated_question_bank:
-        qn = q["question_number"]
+        qn = q["question_id"]
         if qn in feedback_map:
             q["feedback"] = feedback_map[qn]["feedback"]
             q["score"] = feedback_map[qn]["score"]
@@ -673,7 +673,7 @@ async def delete_and_reattempt(
 
     for q in session_doc["question_bank"]:
         new_question_bank.append({
-            "question_number": q["question_number"],
+            "question_id": q["question_id"],
             "question": q["question"],
             "answer": "",
             "feedback": "",

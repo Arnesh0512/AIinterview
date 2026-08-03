@@ -156,7 +156,7 @@ def evaluate_concept_topic_answers(
     {
         "feedback_per_question": [
             {
-                "question_number": 1,
+                "question_id": 1,
                 "feedback": "...",
                 "score": 8
             }
@@ -186,12 +186,12 @@ def evaluate_concept_topic_answers(
                         "items": {
                             "type": "object",
                             "properties": {
-                                "question_number": {"type": "integer"},
+                                "question_id": {"type": "integer"},
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
                             "required": [
-                                "question_number",
+                                "question_id",
                                 "feedback",
                                 "score"
                             ]

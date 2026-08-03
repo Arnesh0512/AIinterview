@@ -15,7 +15,7 @@ from utils.coding import get_used_coding_question_ids ,previous_coding_session_q
 from utils.time import generate_timestamp
 import asyncio
 
-router = APIRouter(prefix="/leetcode", tags=["Coding"])
+router = APIRouter(prefix="/coding", tags=["Coding"])
 security = HTTPBearer()
 
 
@@ -283,7 +283,7 @@ async def generate_questions(
 def save_answer(
     coding_id: str,
     question_session_id: str,
-    question_id: str,
+    question_id: int,
     language: LanguageEnum ,
     answer: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)

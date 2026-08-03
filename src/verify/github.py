@@ -140,17 +140,17 @@ def verify_question_session(
 
 
 
-def verify_question_number(
+def verify_question_id(
     session_doc: dict,
-    question_number: int
+    question_id: int
 ):
 
     question_bank = session_doc.get("question_bank", [])
 
-    if question_number < 1 or question_number > len(question_bank):
+    if question_id < 1 or question_id > len(question_bank):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid question_number"
+            detail="Invalid question_id"
         )
 
 
