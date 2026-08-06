@@ -270,7 +270,6 @@ Instructions:
 - Be strict, analytical, and professional.
 - Provide structured feedback (improvement, weaknesses, strengths, recommendations).
 - Do NOT mention JSON or formatting.
-- Do not provide very large or very small feedback.
 
 Return strictly valid JSON:
 {
@@ -371,7 +370,6 @@ Instructions:
 - Be strict, analytical, and professional.
 - Provide structured feedback (improvement, weaknesses, strengths, recommendations).
 - Do NOT mention JSON or formatting.
-- Do not provide very large or very small feedback.
 
 Return strictly valid JSON:
 {

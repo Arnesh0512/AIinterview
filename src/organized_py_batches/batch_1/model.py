@@ -9,7 +9,7 @@ CHATGPT = OpenAI(api_key=OPENAI_API_KEY)
 
 def call_chatgpt(prompt: str, content: str, temperature: float, response_format: dict):
 
-    '''response = CHATGPT.chat.completions.create(
+    response = CHATGPT.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": prompt},
@@ -17,15 +17,6 @@ def call_chatgpt(prompt: str, content: str, temperature: float, response_format:
         ],
         response_format=response_format,
         temperature=temperature
-    )'''
-    response = CHATGPT.chat.completions.create(
-        model="gpt-5-nano",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": content}
-        ],
-        response_format=response_format,
-        temperature=1.0
     )
 
     return response

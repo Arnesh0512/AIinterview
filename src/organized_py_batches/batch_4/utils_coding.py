@@ -81,6 +81,7 @@ def previous_coding_session_questions(
 
     for s in sessions_diff:
         for q in s.get("question_bank", []):
+            if q.get("answer") and q.get("question_id"):
                 question_ids.add(q["question_id"])
 
     problems = list(
@@ -109,9 +110,13 @@ def previous_coding_session_questions(
             qid = q.get("question_id")
             answer = q.get("answer")
             language = q.get("language")
+
+            if not answer or qid not in problem_map:
+                continue
+
             problem_description = problem_map[qid]
 
-            formatted_questions[f"Problem:\n{problem_description}"] = (
+            formatted_questions[f"{problem_description}"] = (
                 f"""Language: {language}\n Answer:\n{answer}"""
             )
 

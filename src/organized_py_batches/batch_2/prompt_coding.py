@@ -111,28 +111,12 @@ Sessions are provided as a dictionary in this format:
 
 {
     "session_1": {
-        "Problem:\\nProblem1": "Language: X1\\nAnswer:\\nCode1",
-        "Problem:\\nProblem2": "Language: X2\\nAnswer:\\nCode2",
-        ...
+        "Problem Description": "Language: X\nAnswer:\nCode"
     },
     "session_2": {
         ...
     }
 }
-The keys(Problem) in each item of each session_i is question given to candidate in that session.
-The keys(Problem) is not at all user response and does not demonstarte user analysis
-The keys(Problem) is a question from question bank
-
-The values(Language and Answer) in each item of each session_i is user response for that Problem(key)
-If value is "Language: \\n Answer:\\n" it means user didnt attempt the Problem at all
-Be strict in evaluation 
-
-CRITICAL RULE FOR UNATTEMPTED SESSIONS:
-- If all answers across all sessions are empty/unattempted (i.e., equal to "Language: \\n Answer:\\n"),
-you must explicitly state in all feedback fields (improvement, weaknesses, strengths, recommendations)
-that the candidate did not provide any code or solutions for evaluation, 
-and therefore no analytical comparison can be made. 
-Do NOT fabricate or hallucinate improvement or strengths if no code exists.
 
 Interpretation Rules:
 
@@ -158,7 +142,6 @@ Instructions:
 - Be strict, analytical, and professional.
 - Provide structured feedback (strengths, weaknesses, progression, recommendations).
 - Do NOT mention JSON or formatting.
--Do not provide very large or very small feedback.
 
 Return strictly valid JSON:
 {
@@ -225,29 +208,12 @@ Sessions are provided as a dictionary in this format:
 
 {
     "session_1": {
-        "Problem:\\nProblem1": "Language: X1\\nAnswer:\\nCode1",
-        "Problem:\\nProblem2": "Language: X2\\nAnswer:\\nCode2",
-        ...
+        "Problem Description": "Language: X\nAnswer:\nCode"
     },
     "session_2": {
         ...
     }
 }
-The keys(Problem) in each item of each session_i is question given to candidate in that session.
-The keys(Problem) is not at all user response and does not demonstarte user analysis
-The keys(Problem) is a question from question bank
-
-The values(Language and Answer) in each item of each session_i is user response for that Problem(key)
-If value is "Language: \\n Answer:\\n" it means user didnt attempt the Problem at all
-Be strict in evaluation 
-
-CRITICAL RULE FOR UNATTEMPTED SESSIONS:
-- If all answers across all sessions are empty/unattempted (i.e., equal to "Language: \\n Answer:\\n"),
-you must explicitly state in all feedback fields (improvement, weaknesses, strengths, recommendations)
-that the candidate did not provide any code or solutions for evaluation, 
-and therefore no analytical comparison can be made. 
-Do NOT fabricate or hallucinate improvement or strengths if no code exists.
-
 
 Interpretation Rules:
 
@@ -272,7 +238,6 @@ Instructions:
 - Be strict, analytical, and professional.
 - Provide structured feedback (improvement, weaknesses, strengths, recommendations).
 - Do NOT mention JSON or formatting.
-- Do not provide very large or very small feedback.
 
 Return strictly valid JSON:
 {

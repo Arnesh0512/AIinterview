@@ -1,45 +1,58 @@
+import json
 from fastapi import HTTPException
 from model import call_chatgpt
-import json
-from utils.resume import extract_text_with_ocr, extract_text_without_ocr
+from utils.github import fetch_repo_details
 
 
-def process_resume(pdf_path, ocr_mode="N"):
 
-    if ocr_mode.upper() == "Y":
-        extracted_text = extract_text_with_ocr(pdf_path)
-    else:
-        extracted_text = extract_text_without_ocr(pdf_path)
 
-    if not extracted_text.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="No text extracted from PDF."
-        )
 
-    prompt = f""" You are a professional technical resume analyzer. Analyze the resume and:
-      - Identify technical skills and tools
-      - Summarize key projects and impact
-      - Infer strengths and experience level
-      - Suggest possible interview focus areas 
-      - Point out weak or unclear areas 
-      
-      Output strictly in this format: 
-      - Professional Summary (less than 300 words) 
-      - Technical Skills - Key Projects & Impact 
-      - Strength Areas 
-      - Interview Focus Areas 
-      - Weak / Missing Areas 
-      Be concise, professional, and factual. 
-      Do not add information not present in the resume. 
-      Return only one complete string as summary no json summary or any other format."""
+def process_repo(selected_repo_link):
 
-    content = f"Resume Content:\n{extracted_text}"
+    details = fetch_repo_details(selected_repo_link)
+
+
+
+    prompt = f"""
+        You are a professional GitHub repository analyzer.
+
+        Analyze the repository based on:
+        - Project description
+        - Programming languages used
+        - README content
+
+        Provide:
+
+        - Project Overview (less than 300 words)
+        - Technical Stack & Tools
+        - Architecture / Design Insights
+        - Complexity & Developer Skill Level
+        - Strengths
+        - Weaknesses / Improvement Areas
+        - Possible Interview Questions Focus Areas
+
+        Be factual.
+        Do NOT invent features not present.
+        Return only one complete string summary.
+    """
+
+    content = f"""
+        Repository Name: {details.get("repo_name")}
+
+        Description:
+        {details.get("description")}
+
+        Languages Used:
+        {details.get("languages")}
+
+        README:
+        {details.get("readme")}
+    """
 
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "resume_summary",
+            "name": "repo_summary",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -54,39 +67,33 @@ def process_resume(pdf_path, ocr_mode="N"):
 
     response = call_chatgpt(prompt, content, 0.2, response_format)
 
-
-
     try:
         response_content = response.choices[0].message.content
         response_json = json.loads(response_content)
         summary_str = response_json["summary"]
-
     except Exception:
         raise HTTPException(
             status_code=500,
             detail="Invalid JSON returned by AI"
         )
 
-    return summary_str
+    return {
+        "repo_name": details.get("repo_name"),
+        "summary": summary_str
+    }
 
 
-
-
-
-
-
-def generate_resume_question(
-    summary_text: str,
+def generate_github_question(
+    repo_summary: str,
     num_questions: int,
     previous_sessions: list
 ):
-
 
     prompt = f"""
 You are a senior technical interviewer conducting a multi-round adaptive interview.
 
 You will receive:
-1) Resume Summary
+1) Repository Summary
 2) Previous Interview Sessions
 
 Previous Sessions are provided as a dictionary in the following format:
@@ -106,33 +113,39 @@ INTERPRETATION RULES:
 - If Previous Sessions is an empty dictionary ({{}}):
   → This means this is the FIRST interview round.
   → Generate foundational to intermediate level questions.
-  → Cover major technical skills from the resume.
-  → Ensure broad coverage.
+  → Cover major architectural and technical components.
+  → Ensure broad coverage of the project.
 
 - If Previous Sessions contains data:
-  → Each key represents one completed session.
   → session_1 is the most recent session.
-  → Higher session numbers are older sessions.
-  → Each session contains question-answer mappings.
+  → Higher session numbers represent older sessions.
+  → Each key inside a session is a question and its value is the candidate’s answer.
   → You must:
       - Avoid repeating previous questions
       - Identify weak or shallow answers
-      - Identify strong areas
-      - Identify untouched skills from the resume
+      - Identify strong architectural understanding
+      - Identify untouched components of the repository
       - Increase overall difficulty progressively
       - Focus more on:
-            * Weak areas
-            * Partially answered topics
-            * Important but previously unasked areas
-            * Depth expansion in strong areas
+            * Weak architectural explanations
+            * Scalability gaps
+            * Edge cases not discussed
+            * Security considerations not explored
+            * Deep system-level reasoning
 
 Question Generation Rules:
 - Generate exactly {num_questions} questions.
 - Each list item must contain ONLY ONE question.
 - Do NOT combine multiple questions into one.
-- Include a mix of conceptual, practical, and system design questions where appropriate.
+- Include a mix of:
+      * Architecture understanding
+      * Design decisions
+      * Scalability
+      * Optimization
+      * Edge cases
+      * Security considerations
 - Ensure increasing difficulty order within this round.
-- Questions must be strictly relevant to the resume.
+- Questions must be highly specific to the repository.
 - Do NOT mention previous sessions explicitly in the question text.
 - Do NOT provide answers.
 - Do NOT add explanations.
@@ -142,8 +155,8 @@ Return strictly valid JSON in this format:
 """
 
     content = f"""
-Resume Summary:
-{summary_text}
+Repository Summary:
+{repo_summary}
 
 Previous Sessions:
 {json.dumps(previous_sessions, indent=2)}
@@ -152,7 +165,7 @@ Previous Sessions:
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "question_output",
+            "name": "github_question_output",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -190,44 +203,51 @@ Previous Sessions:
 
 
 
-
-
-
-def evaluate_resume_answers(summary_text: str, question_bank: list):
+def evaluate_github_answers(repo_summary: str, question_bank: list):
 
     prompt = """
-    You are a senior technical interviewer evaluating candidate answers based on his resume summary.
+    You are a senior software architect and technical interviewer.
+
+    You are evaluating answers related to a GitHub repository project based on his provided repository summary.
 
     Evaluate each answer based on:
-    - Technical correctness
-    - Depth of understanding
-    - Clarity of explanation
-    - Relevance to the question
+
+    - Understanding of project architecture
+    - Correctness of technical explanation
+    - Depth of implementation knowledge
+    - Design reasoning
+    - Technology choices justification
+    - Awareness of scalability, security, and edge cases
 
     Scoring Rules:
     - Score each answer from 0 to 10
-    - Be strict but fair
-    - Provide constructive feedback
-    - Give overall feedback and overall score (0-10)
+    - Be strict and realistic
+    - Penalize vague or generic answers
+    - Reward deep architectural understanding
+    - Provide actionable feedback
+
+    Also provide:
+    - Overall feedback
+    - Overall score (0–10)
 
     Return strictly valid JSON in this format:
 
     {
-    "feedback_per_question": [
-        {
-        "question_id": 1,
-        "feedback": "...",
-        "score": 8
-        }
-    ],
-    "overall_feedback": "...",
-    "overall_score": 7.5
+        "feedback_per_question": [
+            {
+                "question_id": 1,
+                "feedback": "...",
+                "score": 8
+            }
+        ],
+        "overall_feedback": "...",
+        "overall_score": 7.5
     }
     """
 
     content = f"""
-    Resume Summary:
-    {summary_text}
+    Repository Summary:
+    {repo_summary}
 
     Question & Answers:
     {json.dumps(question_bank, indent=2)}
@@ -236,7 +256,7 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "resume_evaluation_output",
+            "name": "github_evaluation_output",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -249,7 +269,11 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
                                 "feedback": {"type": "string"},
                                 "score": {"type": "number"}
                             },
-                            "required": ["question_id", "feedback", "score"]
+                            "required": [
+                                "question_id",
+                                "feedback",
+                                "score"
+                            ]
                         }
                     },
                     "overall_feedback": {"type": "string"},
@@ -274,6 +298,7 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
         if not isinstance(response_json["feedback_per_question"], list):
             raise ValueError("feedback_per_question must be list")
 
+
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -283,14 +308,13 @@ def evaluate_resume_answers(summary_text: str, question_bank: list):
     return response_json
 
 
-
-def generate_resume_combined_diff_session_feedback(summary_text: str, session_data: dict):
+def generate_github_combined_diff_session_feedback(repo_summary: str, session_data: dict):
 
     prompt = """
 You are a senior technical interview evaluator.
 
 You will receive:
-1) Candidate Resume Summary
+1) Repository Summary
 2) Multiple completed interview sessions.
 
 Sessions are provided as a dictionary in this format:
@@ -309,26 +333,20 @@ Interpretation Rules:
 
 - session_1 is the most recent session.
 - Higher session numbers represent older sessions.
-- Each key inside a session represents a question, and its value is the candidate's answer.
-
-CRITICAL EVALUATION MANDATE:
-- PRIMARY SOURCE OF TRUTH: All feedback fields (improvement, weaknesses, strengths, recommendations) must be derived EXCLUSIVELY from the candidate's actual answers to the questions across the sessions.
-- THE RESUME SUMMARY ROLE: The resume summary is provided ONLY to cross-check whether the candidate's technical claims match their actual performance or if they are giving fake/contradictory responses. 
-- Do NOT write positive feedback based on things listed in the resume if they were not actually demonstrated or answered correctly in the code/responses.
-- PENALTY FOR BAD ANSWERS: If a user's answer is incorrect, empty, unattempted, or contradicts their resume summary, you must reflect this as a weakness and give a strict, poor evaluation for that section.
-- ABSOLUTE PROHIBITION: Do NOT praise or evaluate the candidate based on the resume summary. If it's not in the answers, it does not exist for this evaluation.
+- Each key inside a session is a question and its value is the candidate's answer.
 
 Instructions:
-- Evaluate overall technical progression across sessions strictly based on answers.
-- Identify improvement patterns from actual code/answers.
-- Identify repeated weaknesses or contradictions against their profile.
-- Compare recent performance vs older performance using their answers.
-- Be strict, analytical, and professional.            
+- Evaluate overall technical progression.
+- Identify architectural understanding growth.
+- Identify improvement patterns.
+- Identify repeated weaknesses.
 - Identify consistent strengths.
-- Evaluate depth growth and conceptual maturity.
-- Provide structured feedback (improvement, weaknesses, strengths, recommendations) within 50-60 words each.
+- Evaluate depth growth across sessions.
+- Evaluate system design maturity progression.
+- Compare recent sessions with older ones.
+- Be strict, analytical, and professional.
+- Provide structured feedback (strengths, weaknesses, progression, recommendations).
 - Do NOT mention JSON or formatting.
-- Do not provide very large or very small feedback.
 
 Return strictly valid JSON:
 {
@@ -342,17 +360,17 @@ Return strictly valid JSON:
 """
 
     content = f"""
-    Resume Summary:
-    {summary_text}
+Repository Summary:
+{repo_summary}
 
-    Session wise Question & Answers:
-    {json.dumps(session_data, indent=2)}
-    """
+Session wise Question & Answers:
+{json.dumps(session_data, indent=2)}
+"""
 
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "resume_combined_feedback_output",
+            "name": "github_combined_feedback_output",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -381,19 +399,20 @@ Return strictly valid JSON:
         result = json.loads(content)
         return result["feedback"]
     except:
-        raise HTTPException(status_code=500, detail="Invalid JSON returned by AI")
-    
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )
 
 
 
-
-def generate_resume_combined_same_session_feedback(summary_text: str, session_data: dict):
+def generate_github_combined_same_session_feedback(repo_summary: str, session_data: dict):
 
     prompt = """
 You are a senior technical interview evaluator.
 
 You will receive:
-1) Candidate Resume Summary
+1) Repository Summary
 2) Multiple reattempts of the SAME interview session.
 
 Sessions are provided as a dictionary in this format:
@@ -412,29 +431,20 @@ Interpretation Rules:
 
 - session_1 is the most recent attempt.
 - Higher session numbers represent older attempts.
-- Each key inside a session represents a question, and its value is the candidate's answer.
+- Each key inside a session is a question and its value is the candidate's answer.
 - All sessions correspond to the same interview round repeated over time.
 
-CRITICAL EVALUATION MANDATE:
-- PRIMARY SOURCE OF TRUTH: All feedback fields (improvement, weaknesses, strengths, recommendations) must be derived EXCLUSIVELY from the candidate's actual answers to the questions across the sessions.
-- THE RESUME SUMMARY ROLE: The resume summary is provided ONLY to cross-check whether the candidate's technical claims match their actual performance or if they are giving fake/contradictory responses. 
-- Do NOT write positive feedback based on things listed in the resume if they were not actually demonstrated or answered correctly in the code/responses.
-- PENALTY FOR BAD ANSWERS: If a user's answer is incorrect, empty, unattempted, or contradicts their resume summary, you must reflect this as a weakness and give a strict, poor evaluation for that section.
-- ABSOLUTE PROHIBITION: Do NOT praise or evaluate the candidate based on the resume summary. If it's not in the answers, it does not exist for this evaluation.
-
 Instructions:
-- Evaluate overall technical progression across reattempts strictly based on answers.
+- Evaluate progression across attempts.
+- Identify architectural depth improvement.
 - Identify areas of improvement.
 - Identify areas where mistakes persist.
-- Identify improvement patterns from actual code/answers.
-- Identify repeated weaknesses or contradictions against their profile.
-- Compare recent attempt vs older reattempts using their answers.
-- Be strict, analytical, and professional.            
-- Identify consistent strengths.
-- Evaluate depth growth and conceptual maturity.
-- Provide structured feedback (improvement, weaknesses, strengths, recommendations) within 50-60 words each.
+- Evaluate correction of past weaknesses.
+- Evaluate depth growth and system design maturity progression.
+- Compare latest attempt with older attempts.
+- Be strict, analytical, and professional.
+- Provide structured feedback (improvement, weaknesses, strengths, recommendations).
 - Do NOT mention JSON or formatting.
-- Do not provide very large or very small feedback.
 
 Return strictly valid JSON:
 {
@@ -448,17 +458,17 @@ Return strictly valid JSON:
 """
 
     content = f"""
-    Resume Summary:
-    {summary_text}
+Repository Summary:
+{repo_summary}
 
-    Session wise Question & Answers:
-    {json.dumps(session_data, indent=2)}
-    """
+Session wise Question & Answers:
+{json.dumps(session_data, indent=2)}
+"""
 
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "resume_combined_feedback_output",
+            "name": "github_combined_feedback_output",
             "schema": {
                 "type": "object",
                 "properties": {
@@ -487,4 +497,22 @@ Return strictly valid JSON:
         result = json.loads(content)
         return result["feedback"]
     except:
-        raise HTTPException(status_code=500, detail="Invalid JSON returned by AI")
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid JSON returned by AI"
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

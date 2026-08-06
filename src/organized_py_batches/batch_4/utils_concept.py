@@ -1,8 +1,5 @@
-import fitz
-import pytesseract
-from pdf2image import convert_from_path
+from database import concept_question_collection
 from bson import ObjectId
-from database import resume_question_collection
 from fastapi import HTTPException
 from datetime import datetime, timezone, timedelta
 from typing import Callable, Awaitable, Union
@@ -12,30 +9,8 @@ import inspect
 from utils.time import generate_timestamp
 
 
-def extract_text_without_ocr(pdf_path):
-    text = ""
-    doc = fitz.open(pdf_path)
-    for page in doc:
-        text += page.get_text()
-        
-    return text
-
-
-def extract_text_with_ocr(pdf_path):
-    text = ""
-    pages = convert_from_path(pdf_path, dpi=400)
-
-    for page in pages:
-        text += pytesseract.image_to_string(page)
-        text += "\n"
-
-    return text
-
-
-
-
-def previous_resume_session_questions(
-    resume_id: ObjectId,
+def previous_concept_session_questions(
+    concept_id: ObjectId,
     x: int = None,
     session_number: int = None,
 ):
@@ -44,7 +19,7 @@ def previous_resume_session_questions(
     sessions_used = {}
     
     search_query = {
-        "resume_id": resume_id,
+        "concept_id": concept_id,
         "status": "passive"
         }
 
@@ -52,7 +27,7 @@ def previous_resume_session_questions(
         search_query["session_number"] = session_number
 
     all_sessions = list(
-        resume_question_collection.find(
+        concept_question_collection.find(
             search_query,
             {
                 "_id": 1,
@@ -84,7 +59,7 @@ def previous_resume_session_questions(
 
     if x:
         sorted_sessions = sorted_sessions[:x]
-        
+
         if len(sorted_sessions) <= 1:
             raise HTTPException(
                 status_code=400,
@@ -99,6 +74,7 @@ def previous_resume_session_questions(
         session_dict[f"session_{idx+1}"] = {
             q.get("question", ""): q.get("answer", "")
             for q in s.get("question_bank", [])
+            if q.get("answer")
         }
 
         sessions_used[str(ts)] = {
@@ -110,11 +86,10 @@ def previous_resume_session_questions(
 
 
 
-    
 
 
 async def auto_submit(
-    resume_id: str,
+    concept_id: str,
     question_session_id: str,
     token: str,
     start_time : datetime,
@@ -137,8 +112,8 @@ async def auto_submit(
         await asyncio.sleep(wait_seconds)
 
     if inspect.iscoroutinefunction(fun):
-        await fun(resume_id, question_session_id, generate_timestamp(), credentials)
+        await fun(concept_id, question_session_id, generate_timestamp(), credentials)
     else:
-        fun(resume_id, question_session_id, generate_timestamp(), credentials)
+        fun(concept_id, question_session_id, generate_timestamp(), credentials)
 
 

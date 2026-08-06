@@ -164,6 +164,7 @@ def previous_github_session_questions(
         session_dict[f"session_{idx+1}"] = {
             q.get("question", ""): q.get("answer", "")
             for q in s.get("question_bank", [])
+            if q.get("answer")
         }
 
         sessions_used[str(ts)] = {
