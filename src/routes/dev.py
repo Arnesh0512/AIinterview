@@ -8,6 +8,7 @@ from database import audio_interview_collection, audio_fs
 from verify.token import verify_access_token
 from verify.candidate import verify_candidate_payload
 from utils.reader import OPENAI_API_KEY
+from utils.time import generate_timestamp
 
 router = APIRouter(prefix="/dev", tags=["Dev Auth"])
 security = HTTPBearer()
@@ -18,17 +19,20 @@ security = HTTPBearer()
 def generate_token(email: str):
 
     candidate = candidate_collection.find_one({"email": email.lower()})
+    if candidate:
+        candidate_id = str(candidate["_id"])
+    else:
+        result = candidate_collection.insert_one({
+            "email": email,
+            "created_on": generate_timestamp(),
+        })
+        candidate_id = str(result.inserted_id)
 
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-
-    candidate_id = str(candidate["_id"])
 
     today=date.today()
     Year = today.year + (1 if today.month > 6 else 0)
     Month = 6
     Date = 30
-
 
 
     payload = {
