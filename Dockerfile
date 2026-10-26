@@ -23,4 +23,4 @@ RUN pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org --
 COPY . .
 
 # Run FastAPI
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
+CMD ["sh", "-c", "cd /app/src && exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}"]
