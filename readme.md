@@ -1,177 +1,111 @@
-# AI Interview Backend
+# AIinterview Backend
 
-This repository contains the backend for an AI-powered interview platform built with FastAPI and MongoDB.
-
-It supports candidate and admin workflows for profile setup, resume-based interviews, GitHub interviews, coding practice, concept practice, contest participation, contest evaluation, and leaderboard generation.
-
-## Project Description
-
-The backend is designed to power an interview preparation and assessment platform where:
-
-- candidates can sign in, build profiles, upload resumes, practice interviews, and participate in contests
-- admins can create contests, evaluate candidate performance, inspect responses, and publish results
-- AI is used to generate questions, evaluate answers, and create progress feedback across attempts
-
-The project combines document processing, AI evaluation, session-based interview flows, and contest management in one backend service.
+FastAPI backend for AI-supported interview preparation and contests. It provides candidate and admin workflows for resume, GitHub, coding, and concept interviews, plus multi-round contests and leaderboards.
 
 ## Features
 
-### Authentication
+- Google sign-in and JWT authentication for candidates and admins
+- Candidate profile registration and updates
+- Resume upload and resume-based interview questions, answers, feedback, and progress
+- GitHub repository interview sessions and progress
+- Coding and concept practice sessions, retries, feedback, and progress comparisons
+- Contest registration and resume, coding, concept, and HR rounds
+- Admin contest management, round evaluation, and leaderboards
+- Constants APIs for companies, topics, difficulties, languages, roles, skills, and tags
+- MongoDB/GridFS storage for documents and contest media
 
-- Google sign-in for candidates
-- Google sign-in for admins
-- JWT-based authenticated API access
+## Stack
 
-### Candidate Profile
+- Python 3.11, FastAPI, Uvicorn
+- MongoDB and GridFS through PyMongo
+- OpenAI API and Google ID-token validation
+- PyMuPDF, Tesseract, Poppler, and `pdf2image` for PDF extraction/OCR
+- `python-jose` for JWTs
 
-- candidate registration
-- candidate profile update
-- candidate profile fetch
+## Project layout
 
-### Resume Interview Flow
+```text
+.
+├── src/
+│   ├── main.py          # FastAPI app and router registration
+│   ├── routes/          # API endpoints
+│   ├── schemas/         # Request schemas
+│   ├── utils/           # Environment, database, and shared utilities
+│   ├── verify/          # Google/JWT and entity validation
+│   └── templates/       # Custom Swagger UI page
+├── documentation/       # Project documentation
+├── googleSign/          # Google sign-in sample frontend
+├── requirements.txt
+├── Dockerfile
+└── render.yaml
+```
 
-- upload PDF resumes
-- extract and summarize resume content
-- generate resume-based interview questions
-- save answers question-wise
-- submit sessions
-- generate feedback and scores
-- reattempt sessions
-- progress tracking and stored progress history
+## Configuration
 
-### GitHub Interview Flow
-
-- fetch repositories from a GitHub profile
-- save repository interview roots
-- generate repository-based question sessions
-- save answers and submit sessions
-- feedback generation
-- progress and history tracking
-
-### Coding Practice Flow
-
-- create coding sets using filters
-- generate coding interview sessions
-- save code answers with language
-- submit sessions
-- generate feedback and scores
-- retry and progress comparison
-
-### Concept Practice Flow
-
-- create topic-based concept sets
-- generate conceptual question sessions
-- save and submit answers
-- generate feedback
-- compare progress across attempts
-
-### Contest Flow
-
-- view available contests
-- register and unregister
-- participate in resume, coding, concept, and HR rounds
-- submit files, text answers, and audio answers
-- view round leaderboards and final leaderboard
-
-### Admin Contest Management
-
-- create contests
-- list contests
-- inspect contest details
-- generate round results
-- generate final leaderboard
-- inspect candidate submissions
-- stream candidate resume and HR audio files
-- delete contests and related data
-
-### Constants API
-
-- companies
-- topics
-- difficulties
-- languages
-- roles
-- skills
-- tags
-
-These endpoints support frontend selectors and form options.
-
-## Tech Stack
-
-- Python
-- FastAPI
-- MongoDB
-- GridFS
-- OpenAI API
-- Google Auth
-- PyMuPDF
-- pdf2image
-- pytesseract
-- faster-whisper
-- whisper
-- python-jose
-- Uvicorn
-
-## Environment Variables
-
-Create a `.env` file in the backend root with:
+Create a private `.env` file in the repository root for local development. `python-dotenv` loads these variables through `src/utils/reader.py`.
 
 ```env
-connection_string=your_mongodb_connection_string
-GOOGLE_CLIENT_ID=your_google_client_id
-JWT_SECRET=your_jwt_secret
+connection_string=<mongodb-connection-uri>
+GOOGLE_CLIENT_ID=<google-oauth-client-id>
+JWT_SECRET=<long-random-secret>
 JWT_ALGO=HS256
 Frontend=http://localhost:5173
-OPENAI_API_KEY=your_openai_api_key
-GITHUB_API_KEY=your_github_api_key
+OPENAI_API_KEY=<openai-api-key>
+GITHUB_API_KEY=<github-token>
 ```
 
-## Setup
+Do not commit real credentials. The CORS origins are currently listed directly in `src/main.py`; changing `Frontend` in `.env` does not update that allowlist. Add the deployed frontend origin to the `origins` list in `src/main.py` when needed.
 
-### 1. Create virtual environment
+## Run locally
 
-```powershell
-cd C:\Users\Arnesh\Desktop\AIinterview
-python -m venv AIinter
-```
-
-### 2. Activate virtual environment
+From the repository root, install dependencies, then start Uvicorn from `src` so the route imports and custom Swagger template resolve correctly:
 
 ```powershell
-.\AIinter\Scripts\Activate.ps1
-```
-
-### 3. Install dependencies
-
-```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+Set-Location src
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-## Run the Server
+Open the custom API docs at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The default OpenAPI schema is available at `/openapi.json`.
 
-```powershell
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
-```
+## API overview
 
-Backend URL:
+All routes are relative to the API origin. Protected routes use `Authorization: Bearer <JWT>`.
 
-```text
-http://127.0.0.1:8000
-```
+| Prefix | Purpose |
+| --- | --- |
+| `/auth` | Exchange Google ID tokens for candidate or admin JWTs |
+| `/candidate` | Candidate profile registration, updates, and profile retrieval |
+| `/admin` | Admin profile and contest creation, evaluation, and results |
+| `/resume` | Resume uploads, interview sessions, feedback, and progress |
+| `/github` | Repository interview sessions, feedback, and progress |
+| `/coding` | Coding practice questions, answers, retries, and progress |
+| `/concept` | Concept practice questions, answers, retries, and progress |
+| `/contest` | Contest discovery, registration, round submissions, and leaderboards |
+| `/constants` | Shared selector values for frontend forms |
+| `/dev` | Development token and voice helpers |
 
-Custom docs page:
+## Render deployment
 
-```text
-http://127.0.0.1:8000/docs
-```
+The repository has a Dockerfile that installs the OS packages used for PDF/OCR and starts the application from `/app/src` using Render’s `PORT` variable. For the complete OCR runtime, deploy as a **Docker Web Service** with repository root `.` and Dockerfile path `./Dockerfile`.
 
-## Important Notes
+The current `render.yaml` still configures Render’s native Python runtime with a root-level `uvicorn main:app` start command. That command cannot import the app because `main.py` is under `src`. If deploying through the Blueprint instead, update the service configuration to use Docker or set its Python start command to `cd src && uvicorn main:app --host 0.0.0.0 --port $PORT`.
 
-- MongoDB is used as the primary data store
-- GridFS is used for resume and audio file storage
-- OpenAI-backed evaluation and question generation are part of core workflows
-- local frontend CORS ports are already configured in `main.py`
+Add these environment variables in Render’s service settings:
 
-## GitHub Description
+- `connection_string`
+- `GOOGLE_CLIENT_ID`
+- `JWT_SECRET`
+- `JWT_ALGO` (usually `HS256`)
+- `OPENAI_API_KEY`
+- `GITHUB_API_KEY`
+- `Frontend` (read by the app, but CORS is currently hard-coded in `src/main.py`)
 
-FastAPI + MongoDB backend for an AI interview platform with resume, GitHub, coding, concept, contest, and admin evaluation workflows.
+## Security notes
+
+- `/dev/generate-candidate-token` can create a candidate record and return a JWT using only an email query parameter. `/dev/generate-admin-token` can issue an admin JWT for an existing admin email. These routes do not require a Google ID token; disable or protect them before exposing a production deployment.
+- Keep MongoDB, Google, JWT, OpenAI, and GitHub credentials in environment settings, not source control.
+- Do not commit `.env`, local runtime files, or uploaded user media.
